@@ -1,0 +1,1638 @@
+---
+title: "Vulgar language on Twitter"
+author: "Martin Schweinberger"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+# Introduction
+
+This document shows the analysis of swear words in Twitter domains of Australia, Great Britain, and the USA.
+
+# Preparation
+
+Install packages
+
+```{r inst, eval = F}
+install.packages("dplyr")
+install.packages("here")
+install.packages("stringr")
+install.packages("quanteda")
+install.packages("tidytext")
+install.packages("sentimentr")
+install.packages("writexl")
+install.packages("ggplot2")
+install.packages("Hmisc")
+install.packages("countrycode") 
+install.packages("ggimage")
+install.packages("seededlda")
+install.packages("lubridate")
+install.packages("slider")
+install.packages("psych")
+install.packages("lme4")
+install.packages("sjPlot")
+install.packages("report")
+install.packages("car")
+install.packages("rms")
+install.packages("ggsci")
+install.packages("devtools")
+devtools::install_github('rensa/ggflags')
+```
+
+Activate packages
+
+```{r act, message=F, warning=F}
+library(dplyr)
+library(here)
+library(stringr)
+library(tidytext)
+library(quanteda)
+library(sentimentr)
+library(writexl)
+library(ggplot2)
+library(Hmisc)
+library(countrycode)
+library(ggflags)
+library(seededlda)
+library(lubridate)
+library(slider)
+library(psych)
+library(lme4)
+library(sjPlot)
+library(report)
+library(car)
+library(rms)
+library(ggsci)
+options(scipen=999)
+```
+
+# Processing
+
+Load data
+
+```{r load, eval = F}
+au <- read.csv(here::here("TWEETSWEAR-A7056/processed_data",
+                          "geo_AU_filtered_candidate_timelines.csv"))
+gb <- read.csv(here::here("TWEETSWEAR-A7056/processed_data",
+                          "geo_GB_filtered_candidate_timelines.csv"))
+us <- read.csv(here::here("TWEETSWEAR-A7056/processed_data",
+                          "geo_US_filtered_candidate_timelines.csv"))
+# inspect
+str(au)
+```
+
+
+Combine data
+
+```{r var, eval = F}
+au <- au %>% dplyr::mutate(var = "au")
+gb <- gb %>% dplyr::mutate(var = "gb")
+us <- us %>% dplyr::mutate(var = "us")
+# combine
+raw <- rbind(au, gb, us)
+# inspect
+str(raw)
+```
+
+
+Cleaning text
+
+```{r clean1, eval = F}
+raw <- raw %>%
+  dplyr::mutate(cleantext = stringr::str_replace_all(text, fixed("\n"), " "),
+                cleantext = stringr::str_replace_all(cleantext, "http.*?\\s|http.*?$|@.*?\\s", " "),
+                cleantext = stringr::str_squish(cleantext),
+                ltext = tolower(cleantext))
+base::saveRDS(raw, file = here::here("data", "raw.rda"))
+```
+
+
+
+
+# Topic Modelling
+
+```{r corpus, eval = F}
+tw_corpus <- corpus(raw$cleantext)
+```
+
+
+
+```{r dfm, eval = F}
+toks_tw <- quanteda::tokens(tw_corpus, 
+                    remove_punct = TRUE, 
+                    remove_numbers = TRUE, 
+                    remove_symbol = TRUE) %>%
+  tokens_remove(stopwords("english"))
+dfmat_tw <- dfm(toks_tw) %>% 
+              dfm_trim(min_termfreq = 0.2, 
+                       termfreq_type = "quantile",
+                       max_docfreq = 0.2, 
+                       docfreq_type = "prop")
+# inspect
+dfmat_tw[1:10, 1:10]
+```
+
+## Unsupervised LDA
+
+change k to set different N of topics
+
+```{r lda, eval = F}
+# set seed
+set.seed(1234)
+
+# generate model
+tmod_lda <- seededlda::textmodel_lda(dfmat_tw, k = 20)
+readr::write_delim(as.data.frame(terms(tmod_lda, 20)), here::here("tables", "topic_keys.txt"), delim = "\t")
+# inspect
+terms(tmod_lda, 10)
+```
+
+## Supervised LDA
+
+```{r suplda, eval = F}
+# semisupervised LDA
+dict <- dictionary(list(employment = c("pay", "work", "money", "job*", "hours"),
+                        politics = c("government*", "party", "parliament", "state", "budget", "vote*", "election*"),
+                        climate = c("climate", "water", "energy", "gas", "pollution"),
+                        sports = c("sport" ,"match", "game*", "season*", "play*", "cup*"),
+                        medical = c("hospital", "doctor", "patient", "covid"),
+                        education = c("school*", "education", "teacher*", "universit*"),
+                        foreign = c("china", "trade", "talks", "summit", "treaty"),
+                        immigration = c("immigra*", "refugee*", "asyl*", "camps"),
+                        crime = c("violence", "drugs", "crime", "victim", "prison"),
+                        tech = c("google", "facebook", "apple",  "iphone", "insta", "twitter"),
+                        media = c("music", "movie", "video*", "photo*", "song*"),
+                        military = c("military", "soldier*", "war*", "invasion*", "russia", "ukraine"),
+                        family = c("family", "kid*", "life", "wife*", "husband*"),
+                        web = c("lol", "u", "like", "just", "y'all", "oh"),
+                        wishes = c("happy", "congrat*", "love", "thank*", "day"),
+                        spanish = c("el", "de", "se", "que", "la", "el")))
+tmod_slda <- textmodel_seededlda(dfmat_tw, dict, residual = TRUE, min_termfreq = 10)
+terms(tmod_slda)
+```
+
+save keyterms
+
+```{r topicseeds, eval = F}
+readr::write_delim(as.data.frame(terms(tmod_slda)), here::here("tables", "topic_keys.txt"), delim = "\t")
+# inspect
+terms(tmod_slda, 10)
+```
+
+
+inspect key terms
+
+```{r topicann, eval = F}
+topics(tmod_slda)[1:20]
+```
+
+check predicted topics
+
+
+```{r checklenght, eval = F}
+length(topics(tmod_slda))
+```
+
+check topics
+
+```{r checktopics, eval = F}
+head(topics(tmod_slda), 20)
+```
+
+
+Add topics to data
+
+```{r savedat, eval = F}
+raw <- raw %>%
+  dplyr::mutate(topic = as.vector(topics(tmod_slda))) %>%
+  dplyr::filter(topic != "spanish")
+base::saveRDS(raw, file = here::here("data", "raw_topics.rda"))
+```
+
+# Vulgarity annotation
+
+```{r loadraw, eval = T}
+raw  <- base::readRDS(file = here::here("data", "raw_topics.rda"))
+# inspect
+head(raw)
+```
+
+tokenize
+
+```{r unnest, eval = T}
+tw <- raw %>%
+  tidytext::unnest_tokens(word, ltext)
+# inspect
+str(tw)
+```
+
+
+add iso for flags
+
+```{r addcountry, eval = T}
+tw <- tw %>%
+  dplyr::filter(topic != "spanish") %>%
+  dplyr::mutate(country = dplyr::case_when(var == "au" ~ "AU", 
+                                           var == "gb" ~ "GB", 
+                                           var == "us" ~ "US", 
+                                           T ~ var)) %>%
+  dplyr::mutate(code = tolower(country))
+```
+
+
+
+## Create vulgarity list
+
+
+
+create list of swear words
+
+**sources**
+
+Three lists from the *lexicon* package:
+
+Rinker, T. W. (2018). *lexicon: Lexicon Data version 1.2.1*. http://github.com/trinker/lexicon
+
+* profanity_alvarez: A dataset containing a character vector of profane words from Alejandro U. Alvarez (413 elements). url: https://web.archive.org/web/20130704010355/http://urbanoalvarez.es:80/blog/2008/04/04/bad-words-list/
+
+* profanity_banned: A dataset containing a character vector of profane words from bannedwordlist.com (77 elements). url: http://www.bannedwordlist.com
+
+* profanity_arr_bad: A dataset containing a character vector of profane words from Stackoverflow user2592414 (343 elements). url: https://stackoverflow.com/a/17706025/1000343
+
+One manual list of elements based on
+
+* McEnery, T. (2004). *Swearing in English: Bad language, purity and power from 1586 to the present*. Routledge.
+
+* Schweinberger, M. (2018). Swearing in Irish English–A corpus-based quantitative analysis of the sociolinguistics of swearing. *Lingua*, 209, 1-20.
+
+The lists were combined and then edited and partially extended.
+
+Love (2021) uses the following lemma: ARSE, BASTARD, BITCH, BLOODY, BOLLOCK, BUGGER, COCK, CRAP, CUNT, DICK, FUCK, PISS, SHAG, SHIT, TWAT, WANK
+
+```{r rawlist, eval = F}
+a <- lexicon::profanity_alvarez
+b <- lexicon::profanity_banned
+c <- lexicon::profanity_arr_bad
+d <- c("arse", "arsehole", "arseholes", "ass", "asses", "asshole", "assholes", "bastard", "bastards",
+       "bitch", "bitching", "bitched", "bitches", "bollock", "bollocks", "bollix", "bollicks",
+       "bugger", "buggers", "buggering", "buggered", "bullshit", "bullshitting",  "bullshiting",
+       "bullshits", "bullshitted", "bullshited", "chink", "chinks","cock", "cocks",
+       "cocksucker", "cocksuckers","cocksucka", "crap", "crapping", "crapped", "cuck", "cuckold",
+       "cucky", "cuckolding", "cuckolds", "cunt", "cunts", "cuntz","goddamn", "damn",
+       "damned", "dick", "dicks", "dix", "dicked", "dickhead", "dickheads", "effin",
+       "effing","effed", "fag", "fagg", "fags", "faggs", "faggot", "faggots", "faggit", "faggits",
+       "fascist", "fascists", "fashists", "fashits", "fashit", "fasho", "fashos", "fascos", "fasco",
+       "feck", "feckin", "fecking", "fecked", "fecks",  "frigg", "friggin", "frigging", "frigged", 
+       "friggs", "fuck", "fuckin", "fucking", "fucker", "fuckers", "fucka", "fuckaz", "fuckas", 
+       "fucked", "idiot", "idiots", "knob", "knobhead", "knobs", "knobb", "knobbs", "knobheads", 
+       "moron", "morons", "motherfucker", "mothafucker", "mothafucka",  "motherfuckers", 
+       "mothafuckers", "mothafuckas", "mothafuckaz", "nigger", "niggers", "nigga", "niggas", 
+       "niggaz", "paki", "pakis", "poofter", "poofters", "prick", "pricks", "pussy", "pussies",
+       "pussys", "racist", "rapist", "shag", "shags", "shagggin", "shagging", "shagged", "shit", 
+       "shite", "shits", "shiteater", "shiteaters", "shittin", "shitting", "shitted", "shited", 
+       "sissy", "sissies", "skank", "skanks", "slack", "slacker", "slacka", "slacka", 
+       "slackin", "slacking", "slag", "slagging", "slaggin", "slagged", "slagger", "slagga", 
+       "slut", "sluts", "slutty", "spastic", "spastics", "sucker", 
+       "sukcres", "suckaz", "sucka", "twat", "twats", "wanker", "wanka", "wankers", "whore", 
+       "whores", "whoring", "whored", "piss", "pissed", "pissin", "pissing", "sodding")
+sw <- c(a, b, c, d) %>%
+  tolower()
+sw <- sw[!stringr::str_detect(sw, " ")]
+sw <- sw[!stringr::str_detect(sw, "fu\\(")]
+sw <- stringr::str_remove_all(sw, fixed("*"))
+sw <- stringr::str_remove_all(sw, fixed(";"))
+sw <- unique(sw)
+sw <- sw[order(sw)]
+# check number of items
+length(sw)
+# remove non-bad language items
+rmv <- c("rape", "acrotomophilia", "amcik", "andskota", "anilingus", "anus", 
+        "autoerotic", "ayir", "babeland", "bareback", "bbw", "bdsm", "bestiality", 
+        "birdlock", "bitched", "bondage", "butt", "buttcheeks", "camgirl", "clit", 
+        "clitoris", "clits", "coprophilia", "cum", "cunnilingus", "deepthroat", 
+        "dild0", "dild0s", "dildo", "dildos", "dilld0", "dilld0s", "doggiestyle", 
+        "doggystyle", "domination", "dominatrics", "dominatrix", "ejackulate", 
+        "ejaculation", "fellatio", "foreskin", "handjob", "hardcore", "hell", 
+        "homoerotic", "kinky", "labia", "lesbian", "lolita", "lovemaking", 
+        "masochist", "pegging", "penis", "porn", "porno", "pornography", "rape", 
+        "rautenberg", "sadist", "sex", "sexy", "sodomize", "sodomy", "strapon", 
+        "swinger", "teez", "testical", "testicle", "threesome", "topless", "tubgirl", 
+        "twink", "twinkie", "undressing", "upskirt", "va1jina", "vag1na", "vagiina", 
+        "vagina", "vaj1na", "vajina", "vibrator", "vorarephilia", "vullva", "vulva",
+        "yaoi", "yed", "zoophilia", "anal", "bangbros", "enema", "erotic", "erotism", 
+        "escort", "genitals", "hui", "incest", "injun", "intercourse", "jailbait", 
+        "s&m", "sadism", "swastika", "urophilia", "vittu", "xx", "xxx", "zabourah", 
+        "omg", "gay")
+sw <- sw[!sw %in% rmv]
+# check number of items
+length(sw)
+# save
+badlanguage <- tibble(sw) %>%
+  dplyr::rename(word = 1) %>%
+  dplyr::arrange(word) %>%
+  dplyr::mutate(id = 1:nrow(.),
+                keep = rep("keep", nrow(.)),
+                category = rep("sexualpractice", nrow(.)),
+                severity = rep("mild", nrow(.)),
+                lemma = rep("", nrow(.))) %>%
+  dplyr::relocate(id)
+# save
+writexl::write_xlsx(badlanguage, here::here("data", "badlanguage.xlsx"))
+# inspect
+head(badlanguage)
+```
+
+
+
+
+# Bad language
+
+
+Annotation:
+
+* keep: can the element considered to be *vulgar* ("keep") or not ("remove").
+
+* category: what is the category of the element? (based on Stapleton 2010, see Love 2021)
+  + sex (sexual taboos)
+  + bodily functions (excretory/scatological taboos)
+  + religious (profanity)
+
+* source: what is the source domain of the element?
+  + sexual orientation
+  + sexual practice
+  + bodily secretion
+  + body part
+  + object
+  + religious
+  + racial slur
+  + political slur
+  
+* severity: how severe is the element/term? ("mild", "medium", "strong", "extreme")
+
+* lemma: what is the element's lemma?
+
+* dictionary: is the element/term considered as vulgar by the OED? ("yes", "no")
+
+
+Love, R. (2021). Swearing in informal spoken English: 1990s–2010s. *Text & Talk*, 41(5-6), 739-762.
+
+Stapleton, Karyn. 2010. Swearing. In Miriam A. Locher & Sage L. Graham (eds.), *Interpersonal pragmatics*, 289–306. Berlin: De Gruyter Mouton. https://doi.org/10.1515/9783110214338.2.289.
+
+
+```{r reviewlist, eval = F}
+# save raw for peer-review
+raw <- tibble(sw) %>%
+  dplyr::rename(word = 1) %>%
+  dplyr::arrange(word) %>%
+  dplyr::mutate(id = 1:nrow(.),
+                keep = rep("", nrow(.)),
+                category = rep("", nrow(.)),
+                source = rep("", nrow(.)),
+                severity = rep("", nrow(.)),
+                lemma = rep("", nrow(.)),
+                dictionary = rep("", nrow(.))) %>%
+  dplyr::relocate(id)
+# save
+writexl::write_xlsx(raw, here::here("data", "badlanguage_forreview.xlsx"))
+```
+
+
+## Clean vulgarity list
+
+```{r loadvul, eval = T}
+vulgar <- read.delim(here::here("vulgar_coded.txt"), sep = "\t", header = T) %>%
+  dplyr::filter(keep != "remove") %>%
+  dplyr::rename(badword = word)
+sw <- vulgar %>%
+  dplyr::pull(badword)
+# inspect
+head(vulgar)
+```
+
+
+
+
+## Annotate vulgarity
+
+count swear words
+
+```{r, eval = T}
+tw <- tw %>%
+  dplyr::mutate(badwordn = ifelse(word %in% sw, 1, 0),
+                badword = ifelse(badwordn == 1, word, "")) %>%
+  dplyr::left_join(vulgar, by = "badword") %>%
+  # add location
+  dplyr::mutate(Location = case_when(var == "au" ~ "Australia",
+                                var == "gb" ~ "Great Britain",
+                                var == "us" ~ "United States")) 
+# inspect
+table(tw$badword)
+```
+
+
+# Check data
+
+
+
+
+## Summarize data
+
+```{r tb1, eval = T}
+tb1 <- tw %>%
+  dplyr::group_by(Location) %>%
+  dplyr::summarise(Tokens = n(),
+                   Users = length(names(table(user_id))),
+                   Tweets = length(names(table(tweet_id))))
+tb1
+```
+
+```{r tb2, eval = T}
+tb2 <- tw %>%
+  dplyr::group_by(Location, badwordn) %>%
+  dplyr::summarise(Tokens = n()) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(Tokens_all = sum(Tokens)) %>%
+  dplyr::mutate(Tokens = paste0(Tokens, " (", round(Tokens/Tokens_all*100, 2), "%)")) %>%
+  dplyr::select(-Tokens_all) %>%
+  tidyr::spread(badwordn, Tokens) %>%
+  dplyr::rename(other = 2, 
+                vulgar = 3) %>%
+  dplyr::relocate(other, .after = vulgar)
+tb2
+```
+
+
+```{r, eval = T}
+tb3 <- tw %>%
+  dplyr::group_by(user_id) %>%
+  dplyr::mutate(nvul = sum(badwordn),
+                vuser = ifelse(nvul > 0, 1,0)) %>%
+  dplyr::group_by(Location, vuser) %>%
+  dplyr::summarise(Users = length(table(user_id)),
+                   Tweets = length(table(tweet_id))) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(users_all = sum(Users),
+                   tweets_all = sum(Tweets)) %>%
+  dplyr::mutate(Users = paste0(Users, " (", round(Users/users_all*100, 1), "%)"),
+                Tweets = paste0(Tweets, " (", round(Tweets/tweets_all*100, 1), "%)")) %>%
+  dplyr::select(-users_all, -tweets_all)
+tb3
+```
+
+
+
+
+
+
+## Visualize vulgarity
+
+vulgarity overview
+
+
+```{r p1, eval = T}
+p1 <- tw %>%
+  dplyr::filter(badwordn != 0) %>%
+  dplyr::group_by(word) %>%
+  dplyr::summarize(freq = n()) %>%
+  ungroup() %>%
+  dplyr::mutate(word = ifelse(freq < 1000, "other", word)) %>%
+  dplyr::group_by(word) %>%
+  dplyr::summarize(freq = sum(freq)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(all = sum(freq),
+                percent = round(freq/all*100, 1)) %>%
+  dplyr::mutate(percent = paste0(freq, " (", percent, "%)")) %>%
+  dplyr::filter(word != "other")
+p1 %>%
+  ggplot(aes(reorder(word, freq), freq)) +
+  geom_bar(stat = "identity", fill = "gray80") +
+  geom_text(aes(y = freq+2000, label = percent), size = 2.5, col = "gray30") + 
+  theme_bw() +
+  labs(x = "", y = "Absolute frequency",
+       title = "Absolute frequencies of vulgar tokens in the Twitter sample") +
+  coord_flip(ylim = c(0, 30000))
+# save
+ggsave(here::here("images", "freqbad.png"))
+```
+
+
+```{r p2, eval = T}
+p2 <- tw %>%
+  dplyr::filter(badwordn != 0) %>%
+  dplyr::group_by(lemma) %>%
+  dplyr::summarize(freq = n()) %>%
+  ungroup() %>%
+  dplyr::mutate(lemma = ifelse(freq < 500, "other", lemma)) %>%
+  dplyr::group_by(lemma) %>%
+  dplyr::summarize(freq = sum(freq)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(all = sum(freq),
+                percent = round(freq/all*100, 1)) %>%
+  dplyr::mutate(percent = paste0(freq, " (", percent, "%)"))
+p2 %>%
+  ggplot(aes(reorder(lemma, freq), freq)) +
+  geom_bar(stat = "identity", fill = "gray80") +
+  geom_text(aes(y = freq+4000, label = percent), size = 2.5, col = "gray30") + 
+  theme_bw() +
+  labs(x = "", y = "Absolute frequency",
+       title = "Absolute frequencies of vulgar lemmas in the Twitter sample") +
+  coord_flip(ylim = c(0, 50000))
+# save
+ggsave(here::here("images", "freqlembad.png"))
+```
+
+
+vulgarity by variety
+
+```{r p3, eval = T}
+p3 <- tw %>%
+  dplyr::group_by(Location, country) %>%
+  dplyr::mutate(words = n()) %>%
+  dplyr::filter(badwordn != 0) %>%
+  dplyr::group_by(Location, country, word) %>%
+  dplyr::summarize(freq = n(),
+                   words = unique(words),
+                   relf = freq/words*1000000) %>%
+  ungroup() %>%
+  dplyr::mutate(word = ifelse(relf < 10, "other", word)) %>%
+  dplyr::group_by(Location, country, word) %>%
+  dplyr::summarize(freq = sum(freq),
+                   relf = freq/words*1000000) %>%
+  dplyr::filter(word != "other")
+p3 %>%
+  dplyr::mutate(var = case_when(Location == "Australia" ~ "au",
+                                Location == "Great Britain" ~"gb",
+                                Location == "United States" ~"us")) %>%
+  ggplot(aes(reorder(word, relf), relf)) +
+  geom_flag(aes(y = relf, country = var), size = 3) +
+  coord_flip() +
+  theme_bw() +
+  labs(x = "", y = "Relative frequency (per million words)", title = "Vulgar tokens across locations")
+# save
+ggsave(here::here("images", "freqvulvar.png"))
+```
+
+
+
+vulgarity by variety
+
+```{r p3, eval = T}
+p4 <- tw %>%
+  dplyr::group_by(Location, country) %>%
+  dplyr::mutate(words = n()) %>%
+  dplyr::filter(badwordn != 0) %>%
+  dplyr::group_by(Location, country, lemma) %>%
+  dplyr::summarize(freq = n(),
+                   words = unique(words),
+                   relf = freq/words*1000000) %>%
+  ungroup() %>%
+  dplyr::mutate(lemma = ifelse(relf < 10, "other", lemma)) %>%
+  dplyr::group_by(Location, country, lemma) %>%
+  dplyr::summarize(freq = sum(freq),
+                   relf = freq/words*1000000) %>%
+  dplyr::filter(lemma != "other")
+
+p4 %>%
+  dplyr::mutate(var = case_when(Location == "Australia" ~ "au",
+                                Location == "Great Britain" ~"gb",
+                                Location == "United States" ~"us")) %>%
+  ggplot(aes(reorder(lemma, relf), relf)) +
+  #geom_bar(stat = "identity") +
+  geom_flag(aes(y = relf, country = var), size = 3) +
+  #facet_wrap(~var, nrow = 3) +
+  coord_flip() +
+  theme_bw() +
+  labs(x = "", y = "Relative frequency (per million words)", title = "Vulgar lemmas across locations")
+# save
+ggsave(here::here("images", "freqlemvar.png"))
+```
+
+
+### Time
+
+create time bins (15 mins and 60 mins)
+
+```{r timebins, eval = T}
+twd <- tw %>%
+  #dplyr::sample_n(100000) %>%
+  dplyr::mutate(date = stringr::str_remove_all(tweet_created_at, "T.*"),
+                time = stringr::str_replace_all(tweet_created_at, ".*T(.*?)\\..*", "\\1"),
+                hour = stringr::str_remove_all(time, ":.*"),
+                minutes = stringr::str_remove(time, ".*T[0-9]{2,2}:"),
+                minutes = stringr::str_remove(minutes, ".*?:")) %>%
+    dplyr::mutate(hour = dplyr::case_when(Location == "Australia" ~ as.numeric(hour) + 10,
+                                         Location == "Great Britain" ~ as.numeric(hour) + 1,
+                                         Location == "United States" ~ as.numeric(hour) - 4,
+                                         T ~ as.numeric(hour))) %>%
+  dplyr::mutate(hour = dplyr::case_when(Location == "Australia" ~ ifelse(hour >= 24, hour-24, hour),
+                                         Location == "Great Britain" ~ ifelse(hour >= 24, hour-24, hour),
+                                         Location == "United States" ~ ifelse(hour < 0, hour+24, hour),
+                                         T ~ hour)) %>%
+  dplyr::mutate(time = paste0(hour, ":", minutes)) %>%
+  dplyr::mutate(ndate1 = paste0(date, " ", time))  %>%
+  dplyr::mutate(ndate = as.POSIXlt(ndate1, format = "%Y-%m-%d %H:%M:%S")) %>%
+  dplyr::mutate(by60 = base::cut(ndate, breaks="60 min"),
+                by15 = base::cut(ndate, breaks="15 min"))  %>%
+  dplyr::mutate(by15 = stringr::str_remove_all(by15, ".* "),
+                by15 = stringr::str_remove_all(by15, ":.{2,2}$"))  %>%
+  dplyr::mutate(by60 = stringr::str_remove_all(by60, ".* "),
+                by60 = stringr::str_remove_all(by60, ":.{2,2}$"))
+base::saveRDS(twd, file = here::here("data", "twd.rda"))
+# inspect
+head(twd, 20)#; head(twd$time, 20); head(twd$tweet_created_at, 20); head(twd$ndate, 20)
+```
+
+```{r load3, eval = T}
+twd  <- base::readRDS(file = here::here("data", "twd.rda")) 
+# inspect
+head(twd)
+```
+
+
+
+
+```{r p5, eval = T}
+p5 <- twd %>%
+  dplyr::group_by(Location, by60) %>%
+  dplyr::summarise(freq = length(names(table(tweet_id))))
+p5 %>% 
+  ggplot(aes(x = by60, y = freq, color = Location, group=Location)) +
+  geom_line() +
+  theme_bw() +
+  labs(x = "Time of day", y = "Tweets (absolute frequency)", 
+       title = "Number of tweets by time of day and location") +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=90)) +
+  facet_wrap(~Location, nrow = 3, scales = "free")
+# save
+ggsave(here::here("images", "tweets_time.png"), height = 10, width = 6) 
+```
+
+
+```{r p6}
+p6 <- twd %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(all = length(names(table(tweet_id)))) %>%
+  dplyr::group_by(Location, by15) %>%
+  dplyr::summarise(freq = length(names(table(tweet_id))),
+                   all = unique(all)) %>%
+  dplyr::mutate(percent = round(freq/all*100, 4))
+p6 %>%
+  ggplot(aes(x = by15, y = percent, color = Location, group=Location)) +
+  geom_line() +
+  theme_bw() +
+  labs(x = "Time of day", y = "Percent of tweets",  
+       title = "Percentage of tweets by time of day and location") +
+  theme(legend.position = "top",
+        axis.text.x = element_text(angle=90)) +
+  scale_x_discrete(breaks = p6$by15[seq(1, length(p6$by15), by = 4)], 
+                   labels = p6$by15[seq(1, length(p6$by15), by = 4)]) 
+# save
+ggsave(here::here("images", "tweets_time_percent.png")) 
+```
+
+
+
+```{r p7}
+p7 <- twd  %>%
+  dplyr::group_by(Location, tweet_id, by15) %>%
+  dplyr::summarise(vulgarn = ifelse(sum(badwordn) > 0, 1, 0)) %>%
+  ungroup() %>%
+  dplyr::filter(vulgarn == 1) %>%
+  dplyr::group_by(Location, by15, vulgarn) %>%
+  dplyr::summarise(freq = n()) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(all = sum(freq),
+                percent = round(freq/all * 100, 2)) %>%
+  dplyr::filter(vulgarn != 0) 
+p7 %>%
+  ggplot(aes(by15, percent, color = Location, group = Location)) +
+  geom_line() +       
+  labs(x = "", y = "Percent",
+       title = "Percent of vulgar tokens of all tokens.") +
+  theme_bw()+
+  labs(x = "Time of day", y = "Percent of vulgar tweets",  
+       title = "Percentage of vulgar tweets by time of day and location") +
+  theme(legend.position = "top",
+        axis.text.x = element_text(angle=90)) +
+  scale_x_discrete(breaks = p7$by15[seq(1, length(p7$by15), by = 4)], 
+                   labels = p7$by15[seq(1, length(p7$by15), by = 4)]) 
+# save
+ggsave(here::here("images", "vtweets_loc_time.png"))
+```
+
+```{r p8}
+p8a <- twd  %>%
+  dplyr::group_by(Location, tweet_id, by60) %>%
+  dplyr::summarise(vulgarn = ifelse(sum(badwordn) > 0, 1, 0)) %>%
+  ungroup() %>%
+  dplyr::filter(vulgarn == 1) %>%
+  dplyr::group_by(Location, by60, vulgarn) %>%
+  dplyr::summarise(freq = n()) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(all = sum(freq),
+                percent = round(freq/all * 100, 2)) %>%
+  dplyr::filter(vulgarn != 0) 
+p8b <- twd %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(all = length(names(table(tweet_id)))) %>%
+  dplyr::group_by(Location, by60) %>%
+  dplyr::summarise(freq = length(names(table(tweet_id))),
+                   all = unique(all)) %>%
+  dplyr::mutate(percent = round(freq/all*100, 4))
+head(p8a)
+head(p8b)
+```
+
+
+
+```{r}
+p8ab <- dplyr::full_join(p8a, p8b, by = c("Location", "by60")) %>%
+  dplyr::rename(p_all = 6,
+                p_vul = 9) %>%
+  dplyr::select(Location, by60, p_all, p_vul) %>%
+  dplyr::mutate(p_diff = p_all - p_vul,
+                null = 0) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(col = as.factor(ifelse(p_diff >= 0, "pos", "neg")))
+p8ab %>%
+  ggplot(aes(by60, p_diff, group = Location)) +
+  geom_bar(stat = "identity", aes(fill=p_diff), colour = "gray20") +
+  facet_wrap(~Location, nrow=3) +
+  theme_bw() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle=90)) +
+  labs(x = "Time of day", y = "Percent",  
+       title = "Percentage of observed against expected vulgar tweets by time of day and location\n (positive (>0) = overuse, negative (<0) = underuse)") +
+  scale_fill_gradient2(low="darkblue", mid="white",
+                     high="red", space ="Lab" )
+# save
+ggsave(here::here("images", "vtweets_loc_time_overuse.png"))
+```
+
+
+
+
+
+### Vulgarity
+
+
+Percentage of vulgar tweets
+
+```{r p9}
+p9 <- twd %>%
+  dplyr::group_by(Location, tweet_id) %>%
+  dplyr::summarise(vulgar = ifelse(sum(badwordn) > 0, 1, 0)) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::summarise(all = n(),
+                   freq = sum(vulgar),
+                   percent = round(freq/all * 100, 2)) %>%
+  dplyr::mutate(code = dplyr::case_when(Location == "Australia" ~ "au",
+                                        Location == "Great Britain" ~ "gb",
+                                        Location == "United States" ~ "us"))
+# inspect
+head(p9, 100)
+```
+
+
+
+
+
+```{r p11, eval = T}
+# prepare data
+p11 <- twd %>%
+  dplyr::mutate(token = ifelse(badwordn == 0, "0", word)) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(total = n()) %>%
+  dplyr::group_by(Location, token) %>%
+  dplyr::summarise(freq = n(),
+                   relfreq = freq/unique(total)*1000) %>%
+  dplyr::filter(token != "0",
+                relfreq > .05) %>%
+  dplyr::mutate(code = case_when(Location == "Australia" ~ "au",
+                                Location == "Great Britain" ~"gb",
+                                Location == "United States" ~"us"))
+p11 %>%
+  # start plotting
+  ggplot(aes(x=reorder(token, relfreq), y= relfreq, color = Location, shape = Location)) +  
+  #geom_point() +
+  geom_flag(aes(y = relfreq/2, country = code), size = 4) + 
+  theme_bw() +         
+  theme(panel.grid.minor = element_blank(),
+        legend.position = "top") +
+  labs(x = "", y = "Relative frequency \n(per 1,000 words)",
+       title = "Relative frequency of vulgar tokens by location") +
+  scale_y_continuous(breaks = seq(0, 1, .1),
+                     labels = seq(0, 1, .1)) +
+  scale_color_manual(name = "", values = c("darkgreen", "blue", "red")) +
+  scale_shape_manual(name = "", values = 1:3) +
+  coord_flip()
+# save
+ggsave(here::here("images", "vul_var_rfreq.png"), height = 6, width = 5)
+```
+
+# Bad language by users
+
+
+```{r}
+blusers <- twd %>%
+  dplyr::group_by(Location, user_id) %>%
+  dplyr::summarise(tweets = n(),
+                   badwords = sum(badwordn))
+# inspect
+head(blusers, 100)
+```
+
+
+```{r}
+blusers %>%
+  dplyr::group_by(Location) %>%
+  ggplot(aes(x = badwords)) +
+  geom_histogram(bandwidth = 1) +
+  facet_wrap(~Location, scales = "free")
+```
+
+
+```{r}
+blusers %>%
+  dplyr::group_by(Location) %>%
+  dplyr::summarise(min = summary(tweets)[1],
+                   q1 = summary(tweets)[2],
+                   median = summary(tweets)[3],
+                   mean = summary(tweets)[4],
+                   q3 = summary(tweets)[5],
+                   max = summary(tweets)[6])
+```
+
+```{r}
+blusers %>%
+  dplyr::group_by(Location) %>%
+  ggplot(aes(x = tweets)) +
+  geom_histogram() +
+  facet_wrap(~Location, scales = "free")
+```
+
+Percent of  tweeters who used vulgar tokens at least once
+
+
+```{r}
+blusers %>%
+  dplyr::mutate(vulgar = ifelse(badwords > 1, 1, badwords)) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::summarise(users = n(),
+                   vulgar = sum(vulgar),
+                   percent = round(vulgar/users*100, 2)) %>%
+  dplyr::mutate(code = dplyr::case_when(Location == "Australia" ~ "au",
+                                        Location == "Great Britain" ~ "gb",
+                                        Location == "United States" ~ "us")) -> p12
+# inspect
+head(p12)
+```
+
+```{r}
+blusers %>%
+  dplyr::mutate(badwords = ifelse(badwords >1, 1, badwords)) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::summarise(tweets = sum(tweets),
+                   badwords = sum(badwords),
+                   percent = badwords/tweets*100) %>%
+  dplyr::mutate(code = dplyr::case_when(Location == "Australia" ~ "au",
+                                        Location == "Great Britain" ~ "gb",
+                                        Location == "United States" ~ "us")) -> p13
+# inspect
+p13
+```
+
+
+
+
+```{r}
+blusers %>%
+  dplyr::mutate(badwords = ifelse(badwords >1, 1, badwords)) %>%
+  dplyr::filter(badwords != 0) %>%
+  dplyr::group_by(Location, user_id) %>%
+  dplyr::summarise(percent = badwords/tweets*100) %>%
+  dplyr::group_by(Location) %>%
+  dplyr::summarise(median = median(percent)) %>%
+  dplyr::mutate(code = dplyr::case_when(Location == "Australia" ~ "au",
+                                        Location == "Great Britain" ~ "gb",
+                                        Location == "United States" ~ "us")) -> p14
+# inspect
+p14
+```
+
+### Combining plot
+
+```{r}
+p9a <- p9 %>% dplyr::mutate(type = "Percentage of vulgar tokens") %>% dplyr::select(Location, percent, code, type)
+p12a <- p12 %>% dplyr::mutate(type = "Percentage of users that use vulgar tokens") %>% dplyr::select(Location, percent, code, type)
+p13a <- p13 %>% dplyr::mutate(type = "Percentage of tweets in which vulgar tokens occurred") %>% dplyr::select(Location, percent, code, type)
+p14a <- p14 %>% dplyr::mutate(type = "Percentage of vulgar tweets among vulgar language using users")  %>% dplyr::rename(percent = median)
+colnames(p9a)
+colnames(p12a)
+colnames(p13a)
+colnames(p14a)
+p15 <- rbind(p9a, p12a, p13a, p14a)
+p15 %>%
+  ggplot(aes(Location, percent)) +
+  geom_bar(stat = "identity", fill = "gray80") +
+  geom_text(aes(y = c(rep(1.6, 3),
+                      rep(7, 3), 
+                      rep(0.05, 3),  
+                      rep(0.2, 3)), label = round(percent, 2)), color = "gray20", size = 3) + 
+  geom_flag(aes(y = 0, country = code), size = 5) +
+  facet_wrap(~type, nrow = 4, scales = "free") +
+  coord_flip() +
+  theme_bw() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  labs(x = "", y = "", title = "")
+# save
+ggsave(here::here("images", "vul_overview.png"), height = 6, width = 6)
+```
+
+
+
+
+
+
+# Configural Frequency Analysis
+
+
+```{r}
+bluse <- twd %>%
+  dplyr::group_by(Location) %>%
+  dplyr::mutate(total = n(),
+               element = ifelse(badwordn != "0", lemma, "other")) %>%
+  dplyr::group_by(Location, element) %>%
+  dplyr::summarize(freq = n(),
+                   all = unique(total)) %>%
+  ungroup() %>%
+  dplyr::filter(element != "other") %>%
+  dplyr::mutate(other = all-freq)
+# inspect
+head(bluse)
+```
+
+
+```{r}
+auv <- bluse%>% dplyr::filter(Location == "Australia") %>% dplyr::select(-Location)
+usv <- bluse%>% dplyr::filter(Location == "United States") %>% dplyr::select(-Location)
+gbv <- bluse%>% dplyr::filter(Location == "Great Britain") %>% dplyr::select(-Location)
+```
+
+### AU vs US
+
+
+```{r}
+tb4 <- dplyr::full_join(auv, usv, by = "element")
+head(tb4)
+```
+
+
+```{r}
+tb4 <- tb4 %>%
+  dplyr::rename(a = 2,
+                b = 5,
+                c = 3,
+                d = 6,
+                ca = 4,
+                db = 7) %>%
+  dplyr::mutate(ca = as.double(ca),
+                db = as.double(db),
+                a = as.double(a),
+                b = as.double(b),
+                c = as.double(c),
+                d = as.double(d))  
+tb4 <- tb4 %>%
+  dplyr::mutate(a = tidyr::replace_na(a, 0),
+                b = tidyr::replace_na(b, 0),
+                d = tidyr::replace_na(d, max(tb4$d, na.rm = T)),
+                db = tidyr::replace_na(db, max(tb4$d, na.rm = T)),
+                c = tidyr::replace_na(c, max(tb4$c, na.rm = T)),
+                ca = tidyr::replace_na(ca, max(tb4$c, na.rm = T)))
+ head(tb4) 
+```
+ 
+ 
+```{r}
+tb4 <- tb4 %>%  
+  dplyr::mutate(E1 = (c*(a+b) / (c+d)),
+                E2 = (d*(a+b) / (c+d))) %>%
+  dplyr::mutate(G2 = 2*((a*log(a/E1)) + (b*log(b/E2))) ) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(p = as.vector(unlist(fisher.test(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T))[1])),
+                OR = as.vector(unlist(fisher.test(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T))[3])),
+                phi = phi(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T), 5)) %>%
+  dplyr::mutate(overuse = ifelse(E1 < a, "au", "us"),
+                corrected_sig = dplyr::case_when(p < (0.001 / nrow(.)) ~ "<.001***",
+                                                 p < (0.01 / nrow(.)) ~ "<.001***",
+                                                 p < (0.05 / nrow(.)) ~ "<.001***",
+                                                 T ~ "n.s."),
+                p = round(p, 5))
+head(tb4)
+```
+
+
+```{r}
+tb4_sig <- tb4 %>%
+  dplyr::filter(corrected_sig != "n.s.")
+# inspect
+tb4_sig
+```
+
+
+```{r}
+tb4_sig %>%
+ggplot(aes(x = reorder(element, phi), y = phi, fill = phi > 0)) +
+  geom_col(show.legend = FALSE, fill = "gray80") +
+  geom_flag(aes(y = 0, country = overuse), size = 5) +
+  geom_text(aes(y = ifelse(phi < 0, phi - .001, phi + .001), label = phi), size = 3, color = "gray50") + 
+  labs(x = "",
+       y = "Effect size (phi)",
+       title = "Significant attraction of lemmas against location (AU vs US)\n(Bonferroni corrected)") +
+  coord_flip(ylim = c(-.006, 0.006)) +
+  theme_bw()
+# save
+ggsave(here::here("images", "vul_auus_bar_phi.png"), height = 5, width = 6)
+```
+
+
+```{r}
+tb4_sig %>%
+ggplot(aes(x = reorder(element, G2), y = G2, fill = G2 > 0)) +
+  geom_col(show.legend = FALSE, fill = "gray80") +
+  geom_flag(aes(y = 0, country = overuse), size = 5) +
+  geom_text(aes(y = G2+50, label = round(G2, 1)), size = 4, color = "gray40") + 
+  labs(x = "",
+       y = "Effect size (G2 LogLikelihood)",
+       title = "Significant attraction of lemmas to location (Bonferroni corrected)") +
+  coord_flip(ylim = c(0, 650)) +
+  theme_bw()
+# save
+ggsave(here::here("images", "vul_auus_bar_g2.png"), height = 6, width = 7)
+```
+
+
+
+### US vs GB
+
+
+```{r}
+tb5 <- dplyr::full_join(gbv, usv, by = "element")
+head(tb5)
+```
+
+
+```{r}
+tb5 <- tb5 %>%
+  dplyr::rename(a = 2,
+                b = 5,
+                c = 3,
+                d = 6,
+                ca = 4,
+                db = 7) %>%
+  dplyr::mutate(ca = as.double(ca),
+                db = as.double(db),
+                a = as.double(a),
+                b = as.double(b),
+                c = as.double(c),
+                d = as.double(d))  
+tb5 <- tb5 %>%
+  dplyr::mutate(a = tidyr::replace_na(a, 0),
+                b = tidyr::replace_na(b, 0),
+                d = tidyr::replace_na(d, max(tb5$d, na.rm = T)),
+                db = tidyr::replace_na(db, max(tb5$d, na.rm = T)),
+                c = tidyr::replace_na(c, max(tb5$c, na.rm = T)),
+                ca = tidyr::replace_na(ca, max(tb5$c, na.rm = T)))
+ head(tb5) 
+```
+
+
+
+ 
+```{r}
+tb5 <- tb5 %>%  
+  dplyr::mutate(E1 = (c*(a+b) / (c+d)),
+                E2 = (d*(a+b) / (c+d))) %>%
+  dplyr::mutate(G2 = 2*((a*log(a/E1)) + (b*log(b/E2))) ) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(p = as.vector(unlist(fisher.test(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T))[1])),
+                OR = as.vector(unlist(fisher.test(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T))[3])),
+                phi = phi(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T), 5)) %>%
+  dplyr::mutate(overuse = ifelse(E1 < a, "gb", "us"),
+                corrected_sig = dplyr::case_when(p < (0.001 / nrow(.)) ~ "<.001***",
+                                                 p < (0.01 / nrow(.)) ~ "<.001***",
+                                                 p < (0.05 / nrow(.)) ~ "<.001***",
+                                                 T ~ "n.s."),
+                p = round(p, 5))
+head(tb5)
+```
+
+
+
+
+```{r}
+tb5_sig <- tb5 %>%
+  dplyr::filter(corrected_sig != "n.s.")
+# inspect
+tb5_sig
+```
+
+
+```{r}
+tb5_sig %>%
+ggplot(aes(x = reorder(element, phi), y = phi, fill = phi > 0)) +
+  geom_col(show.legend = FALSE, fill = "gray80") +
+  geom_flag(aes(y = 0, country = overuse), size = 5) +
+  geom_text(aes(y = ifelse(phi < 0, phi - .002, phi + .002), label = phi), size = 3, color = "gray50") + 
+  labs(x = "",
+       y = "Effect size (phi)",
+       title = "Significant attraction of lemmas against location GB vs US)\n(Bonferroni corrected)") +
+  coord_flip(ylim = c(-.012, 0.01)) +
+  theme_bw()
+# save
+ggsave(here::here("images", "vul_gbus_bar_phi.png"), height = 6, width = 6)
+```
+
+
+
+```{r}
+tb5_sig %>%
+ggplot(aes(x = reorder(element, G2), y = G2, fill = G2 > 0)) +
+  geom_col(show.legend = FALSE, fill = "gray80") +
+  geom_flag(aes(y = 0, country = overuse), size = 5) +
+  geom_text(aes(y = G2+500, label = round(G2, 1)), size = 3, color = "gray50") + 
+  labs(x = "",
+       y = "Effect size (G2 LogLikelihood)",
+       title = "Significant attraction of lemmas to location (Bonferroni corrected)") +
+  coord_flip(ylim = c(0, 5000)) +
+  theme_bw()
+# save
+ggsave(here::here("images", "vul_gbus_bar_g2.png"), height = 6, width = 7)
+```
+
+
+### GB vs AU
+
+
+```{r}
+tb6 <- dplyr::full_join(gbv, auv, by = "element")
+head(tb6)
+```
+
+
+```{r}
+tb6 <- tb6 %>%
+  dplyr::rename(a = 2,
+                b = 5,
+                c = 3,
+                d = 6,
+                ca = 4,
+                db = 7) %>%
+  dplyr::mutate(ca = as.double(ca),
+                db = as.double(db),
+                a = as.double(a),
+                b = as.double(b),
+                c = as.double(c),
+                d = as.double(d))  
+tb6 <- tb6 %>%
+  dplyr::mutate(a = tidyr::replace_na(a, 0),
+                b = tidyr::replace_na(b, 0),
+                d = tidyr::replace_na(d, max(tb6$d, na.rm = T)),
+                db = tidyr::replace_na(db, max(tb6$d, na.rm = T)),
+                c = tidyr::replace_na(c, max(tb6$c, na.rm = T)),
+                ca = tidyr::replace_na(ca, max(tb6$c, na.rm = T)))
+ head(tb6) 
+```
+
+
+
+ 
+```{r}
+tb6 <- tb6 %>%  
+  dplyr::mutate(E1 = (c*(a+b) / (c+d)),
+                E2 = (d*(a+b) / (c+d))) %>%
+  dplyr::mutate(G2 = 2*((a*log(a/E1)) + (b*log(b/E2))) ) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(p = as.vector(unlist(fisher.test(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T))[1])),
+                OR = as.vector(unlist(fisher.test(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T))[3])),
+                phi = phi(matrix(c(a,b,ca,db), nrow = 2, ncol = 2, byrow = T), 5)) %>%
+  dplyr::mutate(overaue = ifelse(E1 < a, "gb", "au"),
+                corrected_sig = dplyr::case_when(p < (0.001 / nrow(.)) ~ "<.001***",
+                                                 p < (0.01 / nrow(.)) ~ "<.001***",
+                                                 p < (0.05 / nrow(.)) ~ "<.001***",
+                                                 T ~ "n.s."),
+                p = round(p, 5))
+head(tb6)
+```
+
+
+
+
+```{r}
+tb6_sig <- tb6 %>%
+  dplyr::filter(corrected_sig != "n.s.")
+# inspect
+tb6_sig
+```
+
+
+```{r}
+tb6_sig %>%
+ggplot(aes(x = reorder(element, phi), y = phi, fill = phi > 0)) +
+  geom_col(show.legend = FALSE, fill = "gray80") +
+  geom_flag(aes(y = 0, country = overaue), size = 5) +
+  geom_text(aes(y = ifelse(phi < 0, phi - .001, phi + .001), label = phi), size = 3, color = "gray50") + 
+  labs(x = "",
+       y = "Effect size (phi)",
+       title = "Significant attraction of lemmas again location (GB vs AU)\n(Bonferroni corrected)") +
+  coord_flip(ylim = c(-.005, 0.005)) +
+  theme_bw()
+# save
+ggsave(here::here("images", "vul_gbau_bar_phi.png"), height = 4.5, width = 6)
+```
+
+
+
+```{r}
+tb6_sig %>%
+ggplot(aes(x = reorder(element, G2), y = G2, fill = G2 > 0)) +
+  geom_col(show.legend = FALSE, fill = "gray80") +
+  geom_flag(aes(y = 0, country = overaue), size = 5) +
+  geom_text(aes(y = G2+10, label = round(G2, 1)), size = 4, color = "gray40") + 
+  labs(x = "",
+       y = "Effect size (G2 LogLikelihood)",
+       title = "Significant attraction of lemmas to location (Bonferroni corrected)") +
+  coord_flip(ylim = c(0, 100)) +
+  theme_bw()
+# save
+ggsave(here::here("images", "vul_gbau_bar_bar.png"), height = 6, width = 7)
+```
+
+
+
+# Topics by Twittersphere
+
+create index of how many sentences are in each letter
+
+```{r}
+topics_loc <- raw %>%
+  dplyr::group_by(var) %>%
+  dplyr::mutate(total = n(),
+                topic = ifelse(is.na(topic), "other", as.character(topic))) %>%
+  dplyr::group_by(var, topic) %>%
+  dplyr::summarise(freq = n(),
+                   percent = round(freq / unique(total) * 100, 2)) %>%
+  dplyr::group_by(topic) %>%
+  dplyr::mutate(all = sum(percent),
+                var = dplyr::case_when(var == "au" ~ "Australia",
+                                       var == "gb" ~ "Great Britain",
+                                       var == "us" ~ "United States",
+                                       T ~ var)) %>%
+  dplyr::rename(Topic = topic,
+                Location = var)
+# inspect
+head(topics_loc)
+
+```
+
+
+
+
+```{r}
+topics_loc %>%
+  ggplot(aes(reorder(Topic, -all), percent, fill = "gray80", color = "gray20")) +
+  geom_bar(stat = "identity", position = position_dodge(), fill = "gray80", color = "gray20") +
+  geom_text(aes(y = 20, label = Topic), size = 3, col = "gray20", angle = 90, hjust = 1) +
+  geom_text(aes(y = 2, label = paste0(round(percent, 1), "%")), size = 3, col = "gray20") + 
+  facet_wrap(~Location, nrow = 3) +
+  coord_cartesian(ylim = c(0, 20)) +
+  theme_bw() +
+  labs(y = "Percent", x = "", title = "Percentage of topics by location") +
+  theme(legend.position = "none",
+        axis.text.x=element_blank(),
+        axis.ticks.x = element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) 
+# save
+ggsave(here::here("images", "top_var.png"), height = 6, width = 7)
+```
+
+
+
+generate data frame with topic for each sentence plus period
+
+```{r}
+tw_top <- twd %>%
+  dplyr::group_by(tweet_id, Location, topic) %>%
+  dplyr::summarise(vulgarn = sum(badwordn)) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(freq = ifelse(vulgarn > 0, 1, 0)) %>%
+  dplyr::group_by(Location, topic) %>%
+  dplyr::summarise(all = n(),
+                percent = round(sum(freq) / unique(all) * 100, 1),
+                   freq = sum(freq),
+                   all = unique(all),
+                label = paste0(percent, "%\n(", freq, ")")) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate(m = mean(percent),
+                col = percent-m)
+# inspect
+head(tw_top)
+```
+
+plot
+
+```{r}
+tw_top %>%
+  dplyr::rename(Topic = topic) %>%
+  ggplot(aes(x = reorder(Topic, -percent), y = percent, group = Topic, fill = Topic)) +
+  geom_bar(stat = "identity", position="stack") +
+  geom_text(aes(y = percent +2, label = label), size = 3, col = "gray30") + 
+  facet_wrap(~Location, nrow = 3) +
+  labs(y = "Percent", x = "", title = "Tweets containing vulgar tokens across topics by location") +
+  theme(legend.position = "top") +
+  coord_cartesian(ylim = c(0,20)) +
+  theme_bw() +
+  theme(legend.position="none",
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.text.x = element_text(angle = 90, size =10))
+ggsave(file = here::here("images", "topic_twd_vul.png"), 
+         height = 8,  width = 6, dpi = 600)
+```
+
+
+
+```{r}
+tw_top %>%
+  dplyr::rename(Topic = topic) %>%
+  ggplot(aes(x = reorder(Topic, -percent), y = percent, group = Topic, fill = col)) +
+  geom_bar(stat = "identity", position="stack") +
+  geom_text(aes(y = percent +3, label = label), size = 3, col = "gray30") + 
+  facet_wrap(~Location, nrow = 3) +
+  labs(y = "Percent", x = "", title = "Tweets containing vulgar tokens across topics by location") +
+  theme(legend.position = "top") +
+  coord_cartesian(ylim = c(0,22)) +
+  theme_bw() +
+  theme(legend.position="none",
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(), 
+        axis.text.x = element_text(angle = 90, size =10))  +
+  scale_fill_gradient2(low="darkblue", mid="white",
+                     high="red", space ="Lab" )
+ggsave(file = here::here("images", "topic_twd_vul_bw.png"), 
+         height = 8,  width = 6, dpi = 600)
+```
+
+
+```{r}
+topic_keys <- read.delim(here::here("tables", "topic_keys.txt"), sep = "\t")
+# inspect
+topic_keys
+```
+
+
+```{r}
+ass <- tw_top %>%
+  dplyr::select(Location, topic, freq) %>%
+  tidyr::spread(Location, freq)
+head(ass)
+# create matrix 
+assocmx <- as.matrix(ass[,2:4])
+attr(assocmx, "dimnames")[1] <- as.vector(ass[,1])
+```
+
+
+
+```{r}
+x2 <- chisq.test(assocmx)
+x2top <- rep(rownames(assocmx), 3)
+x2var <- rep(colnames(assocmx), each = length(rownames(assocmx)))
+x2obs <- as.vector(unlist(chisq.test(assocmx)[6]))
+x2exp <- as.vector(unlist(chisq.test(assocmx)[7]))
+x2res <- as.vector(unlist(chisq.test(assocmx)[8]))
+x2sres <- as.vector(unlist(chisq.test(assocmx)[9]))
+x2df <- data.frame(x2top, x2var, x2obs, x2exp, x2res, x2sres)
+x2df <- x2df %>%
+  dplyr::rename(Topic = 1,
+                Location = 2,
+                Observed = 3,
+                Expected = 4,
+                Residual = 5,
+               Std.Residual = 6) %>%
+  dplyr::mutate(Deviation = Observed - Expected)
+# inspect
+x2df
+```
+
+```{r}
+x2df %>%
+  ggplot(aes(reorder(Topic, -Std.Residual), Std.Residual, fill = Std.Residual)) +
+  geom_bar(stat = "identity", color = "gray20") +
+  facet_wrap(~Location, nrow = 3) + 
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, size =10),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+  scale_fill_gradient2(low="darkblue", mid="white",
+                     high="red", space ="Lab" ) +
+  labs(x = "")
+ggsave(file = here::here("images", "topic_twd_vul_x2.png"), 
+         height = 6,  width = 5, dpi = 600)
+```
+
+
+
+# Examples
+
+generate data frame with topic for each sentence plus period
+
+```{r ex1}
+exdat <- raw %>%
+  dplyr::mutate(fuck = stringr::str_detect(ltext, "fuck"),
+                ass = stringr::str_detect(ltext, "\\Wass\\W"),
+                cunt = stringr::str_detect(ltext, "cunt"),
+                wtf = stringr::str_detect(ltext, "wtf"),
+                lmfao = stringr::str_detect(ltext, "lmfao"),
+                shit = stringr::str_detect(ltext, "shit"),
+                cock = stringr::str_detect(ltext, "cock")) %>%
+  dplyr::filter(fuck == T | ass == T | cunt == T | wtf == T | lmfao == T | shit == T | cock == T) %>%
+  dplyr::select(tweet_id, var, text, topic, fuck, ass, cunt, wtf, lmfao, shit, cock)
+# save data
+readr::write_delim(exdat, here::here("tables", "exdat.txt"), delim = "\t")
+# inspect
+head(exdat, 10)
+```
+
+
+
+```{r ex1}
+extop <- raw %>%
+  dplyr::filter(topic == "other") %>%
+  dplyr::filter(var == "us") %>%
+  dplyr::mutate(fuck = stringr::str_detect(ltext, "fuck"),
+                ass = stringr::str_detect(ltext, "\\Wass\\W"),
+                cunt = stringr::str_detect(ltext, "cunt"),
+                wtf = stringr::str_detect(ltext, "wtf"),
+                lmfao = stringr::str_detect(ltext, "lmfao"),
+                shit = stringr::str_detect(ltext, "shit"),
+                cock = stringr::str_detect(ltext, "cock")) %>%
+  dplyr::filter(fuck == T | ass == T | cunt == T | wtf == T | lmfao == T | shit == T | cock == T) %>%
+  dplyr::select(tweet_id, var, text, topic, fuck, ass, cunt, wtf, lmfao, shit, cock)
+# save data
+readr::write_delim(extop, here::here("tables", "extop.txt"), delim = "\t")
+# inspect
+head(extop, 10)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+Extract 10 examples for each topic.
+
+```{r ex2, eval = F}
+ex <- exdat %>%
+  group_by(topic) %>%
+  dplyr::mutate(n_id = 1:n()) %>%
+  dplyr::filter(n_id < 11)
+# save data
+readr::write_delim(ex, here::here("tables", "ex_selec.txt"), delim = "\t")
+# inspect
+head(ex)
+```
+
+
+Find locations of examples.
+
+
+
+# Inferential statistics
+
+
+
+
+simplify data (only retain relevant columns)
+
+```{r}
+raw_st <- raw %>%
+  dplyr::select(tweet_id, conversation_id, verified, followers_count, 
+                  following_count, tweet_count, user_id, var, topic,
+                  user_created_at, retweeted_tweet_id, quoted_tweet_id,
+                  replied_to_tweet_id)
+# inspect
+head(raw_st)
+```
+
+convert to by tweet
+
+```{r}
+tws_bt <-  raw_st %>%
+  dplyr::mutate(retweeted_tweet_id = ifelse(is.na(retweeted_tweet_id), 0, 1),
+                quoted_tweet_id = ifelse(is.na(quoted_tweet_id), 0, 1),
+                replied_to_tweet_id = ifelse(is.na(replied_to_tweet_id), 0, 1)) %>%
+  dplyr::rename(retweet = retweeted_tweet_id,
+                quote = quoted_tweet_id,
+                reply = replied_to_tweet_id,
+                user = user_id,
+                followers = followers_count,
+                following = following_count) %>%
+  dplyr::mutate(tweet_id = factor(tweet_id),
+                conversation_id = factor(conversation_id),
+                verified = factor(verified),
+                user = factor(user),
+                retweet = factor(retweet),
+                quote = factor(quote),
+                reply = factor(reply))
+head(tws_bt)
+```
+
+```{r}
+vultw <- twd %>%
+  dplyr::select(badwordn, tweet_id) %>%
+  dplyr::filter(badwordn  != 0) %>%
+  dplyr::pull(tweet_id)
+```
+
+```{r}
+tws_bt <- tws_bt %>%
+  dplyr::mutate(vulgar = ifelse(tweet_id %in% vultw, 1, 0),
+                user_created_at = stringr::str_remove_all(user_created_at, "-.*"))
+base::saveRDS(tws_bt, file = here::here("data", "tws_bt.rda"))
+# inspect
+head(tws_bt)
+```
+
+
+
+```{r}
+# load packages
+library(dplyr)
+library(car)
+library(gridExtra)
+library(ggplot2)
+library(rms)
+library(sjPlot)
+```
+
+```{r}
+options(contrasts  =c("contr.treatment", "contr.poly"))
+blrdata.dist <- datadist(tws_bt)
+options(datadist = "blrdata.dist")
+```
+
+
+
+```{r}
+# base-line mixed-model
+m0 = glmer(SUFlike ~ (1|ID), data = mblrdata, family = binomial) 
+```
+
+
+```{r fitting, wval = F}
+library(glmulti)
+# wrapper function for linear mixed-models
+glmer.glmulti <- function(formula,data, random="",...){
+  glmer(paste(deparse(formula),random), family = binomial, data=data, ...)
+}
+# define formular
+form_glmulti = as.formula(paste("vulgar ~ Gender + Age + ConversationType + Priming"))
+```
+
+
+```{r}
+summary(mfit)
+```
+
+
+```{r}
+m1.glm = glm(vulgar ~ 1, family = binomial, data = tws_bt)
+```
+
+
+
+```{r}
+# generate plots
+autoplot(m1.mlr) + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme_bw()
+```
+
+
+
+# Outro
+
+```{r}
+sessionInfo()
+```
+
+

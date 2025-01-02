@@ -1,0 +1,434 @@
+---
+title: "Vulgar language on the web across World Englishes - Part 3: data cleaning"
+author: "Anonymous"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: word_document
+bibliography: bibliography.bib
+link-citations: yes
+---
+
+This document shows an analysis that was performed with the aim of finding differences in swearing across geographically distinct varieties of English around the world based on the GloWbe corpus. 
+
+install packages
+
+```{r install, eval = F, message=F, warning=F}
+# install packages
+install.packages("tidyverse")
+install.packages("quanteda")
+install.packages("here")
+install.packages("udpipe")
+install.packages("future")
+install.packages("furrr")
+install.packages("stringi")
+install.packages("parallel")
+```
+
+load packages and set options
+
+```{r act, message=FALSE, warning=FALSE}
+# load packages
+library(data.table)
+library(tidyverse)
+library(quanteda)
+library(here)
+library(stringi)
+#library(udpipe)
+library(parallel)
+library(spacyr)
+# load language model
+#m_eng   <- udpipe::udpipe_download_model(language = "english-ewt")
+#m_eng <- udpipe_load_model(file = here::here("english-ewt-ud-2.5-191206.udpipe"))
+```
+
+# Testing
+
+## udpipe
+
+```{r eval = F}
+# Time difference of 8.818679 secs for 50 texts, spaCy less than 1.5 seconds 
+# hence: using spaCy
+testtxt <- base::readRDS(here::here("data", "glowbe_au_clean.rda")) %>%
+  dplyr::slice_head(n = 50) %>%
+  dplyr::filter(cleantext != "")
+start_time <- Sys.time()
+
+testtxt %>%
+  dplyr::mutate(postext = lapply(cleantext, function(x){
+      x <- udpipe::udpipe_annotate(m_eng, x = x) %>%
+        as.data.frame() %>%
+        dplyr::group_by(doc_id) %>%
+        dplyr::summarise(postext = paste(.$token, "/", .$xpos, collapse = " ", sep = "")) %>%  
+        dplyr::pull(postext) 
+      }) %>% unlist(recursive = TRUE, use.names = FALSE)) -> test_pos
+
+head(test_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+# spacy
+
+
+```{r eval = F}
+# Time difference of 8.356269 secs
+testtxt <- base::readRDS(here::here("data", "glowbe_au_clean.rda")) %>%
+  dplyr::slice_head(n = 50) %>%
+  dplyr::filter(cleantext != "")
+start_time <- Sys.time()
+
+testtxt %>%
+  dplyr::mutate(postext = lapply(cleantext, function(x){
+      x <- udpipe::udpipe_annotate(m_eng, x = x) %>%
+        as.data.frame() %>%
+        dplyr::group_by(doc_id) %>%
+        dplyr::summarise(postext = paste(.$token, "/", .$xpos, collapse = " ", sep = "")) %>%  
+        dplyr::pull(postext) 
+      }) %>% unlist(recursive = TRUE, use.names = FALSE)) -> test_pos
+
+head(test_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+# Processing
+
+
+## Australia
+
+ 
+```{r eval = F}
+glowbe_au_pos <- base::readRDS(here::here("data", "glowbe_au_clean.rda")) %>%
+  dplyr::filter(cleantext != "")
+
+start_time <- Sys.time()
+
+# Initialize spaCy with a specific language model (e.g., English)
+spacy_initialize(model = "en_core_web_sm")
+
+glowbe_au_pos %>%
+  dplyr::mutate(postext = spacy_parse(cleantext) %>%
+  as.data.frame()  %>%
+  dplyr::mutate(doc_id = factor(doc_id)) %>%
+        dplyr::group_by(doc_id) %>%
+        dplyr::summarise(postext = paste(token, "/", pos, collapse = " ", sep = "")) %>%  
+        dplyr::pull(postext)) -> glowbe_au_pos
+
+base::saveRDS(glowbe_au_pos, file = here::here("data", "glowbe_au_pos.rda"))
+
+# Clean up and release resources
+spacy_finalize()
+
+head(glowbe_au_pos)
+rm(glowbe_au_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+
+
+## Bangladesh
+
+
+```{r eval = F}
+glowbe_bd_pos <- base::readRDS(here::here("data", "glowbe_bd_clean.rda")) %>%
+  dplyr::filter(cleantext != "")
+
+start_time <- Sys.time()
+
+# Initialize spaCy with a specific language model
+spacy_initialize(model = "en_core_web_sm")
+
+glowbe_bd_pos %>%
+  dplyr::mutate(postext = spacy_parse(cleantext) %>%
+  as.data.frame()  %>%
+  dplyr::mutate(doc_id = factor(doc_id)) %>%
+        dplyr::group_by(doc_id) %>%
+        dplyr::summarise(postext = paste(token, "/", pos, collapse = " ", sep = "")) %>%  
+        dplyr::pull(postext)) -> glowbe_bd_pos
+
+base::saveRDS(glowbe_bd_pos, file = here::here("data", "glowbe_bd_pos.rda"))
+
+# Clean up and release resources
+spacy_finalize()
+
+head(glowbe_bd_pos)
+rm(glowbe_bd_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Canada
+
+```{r eval = T}
+glowbe_ca_pos <- base::readRDS(here::here("data", "glowbe_ca_clean.rda")) %>%
+  dplyr::filter(cleantext != "")
+
+start_time <- Sys.time()
+
+# Initialize spaCy with a specific language model
+spacy_initialize(model = "en_core_web_sm")
+
+glowbe_ca_pos %>%
+  dplyr::mutate(postext = spacy_parse(cleantext) %>%
+  as.data.frame()  %>%
+  dplyr::mutate(doc_id = factor(doc_id)) %>%
+        dplyr::group_by(doc_id) %>%
+        dplyr::summarise(postext = paste(token, "/", pos, collapse = " ", sep = "")) %>%  
+        dplyr::pull(postext)) -> glowbe_ca_pos
+
+base::saveRDS(glowbe_ca_pos, file = here::here("data", "glowbe_ca_pos.rda"))
+
+# Clean up and release resources
+spacy_finalize()
+
+head(glowbe_ca_pos)
+rm(glowbe_ca_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Great Britain
+
+```{r vgb, message=FALSE, warning=FALSE}
+# extract start time
+start_time <- Sys.time()
+# batch 1
+postxt("glowbe_gb_clean1.rda") -> glowbe_gb1_pos
+base::saveRDS(glowbe_gb1_pos, file = here::here("data", "glowbe_gb1_pos.rda"))
+rm(glowbe_gb1_pos)
+# batch 2
+postxt("glowbe_gb_clean2.rda") -> glowbe_gb2_pos
+base::saveRDS(glowbe_gb2_pos, file = here::here("data", "glowbe_gb2_pos.rda"))
+rm(glowbe_gb2_pos)
+# batch 2
+postxt("glowbe_gb_clean3.rda") -> glowbe_gb3_pos
+base::saveRDS(glowbe_gb3_pos, file = here::here("data", "glowbe_gb3_pos.rda"))
+rm(glowbe_gb3_pos)
+# batch 2
+postxt("glowbe_gb_clean4.rda") -> glowbe_gb4_pos
+base::saveRDS(glowbe_gb4_pos, file = here::here("data", "glowbe_gb4_pos.rda"))
+rm(glowbe_gb4_pos)
+# batch 2
+postxt("glowbe_gb_clean5.rda") -> glowbe_gb5_pos
+base::saveRDS(glowbe_gb5_pos, file = here::here("data", "glowbe_gb5_pos.rda"))
+rm(glowbe_gb5_pos)
+# extract end time
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Ghana
+
+```{r vgh, message=FALSE, warning=FALSE}
+# apply function to files
+start_time <- Sys.time()
+postxt("glowbe_gh_clean.rda") -> glowbe_gh_pos
+base::saveRDS(glowbe_gh_pos, file = here::here("data", "glowbe_gh_pos.rda"))
+rm(glowbe_gh_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+## Hong Kong
+
+```{r vhk, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_hk_clean.rda") -> glowbe_hk_pos
+base::saveRDS(glowbe_hk_pos, file = here::here("data", "glowbe_hk_pos.rda"))
+rm(glowbe_hk_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Ireland
+
+```{r vie, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_ie_clean.rda") -> glowbe_ie_pos
+base::saveRDS(glowbe_ie_pos, file = here::here("data", "glowbe_ie_pos.rda"))
+rm(glowbe_ie_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## India
+
+```{r vin, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_in_clean.rda") -> glowbe_in_pos
+base::saveRDS(glowbe_in_pos, file = here::here("data", "glowbe_in_pos.rda"))
+rm(glowbe_in_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+## Jamaica
+
+```{r vjm, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_jm_clean.rda") -> glowbe_jm_pos
+base::saveRDS(glowbe_jm_pos, file = here::here("data", "glowbe_jm_pos.rda"))
+rm(glowbe_jm_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Kenia
+
+```{r vke, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_ke_clean.rda") -> glowbe_ke_pos
+base::saveRDS(glowbe_ke_pos, file = here::here("data", "glowbe_ke_pos.rda"))
+rm(glowbe_ke_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+## Malaysia
+
+```{r vmy, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_my_clean.rda") -> glowbe_my_pos
+base::saveRDS(glowbe_my_pos, file = here::here("data", "glowbe_my_pos.rda"))
+rm(glowbe_my_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+## Nigeria
+
+```{r vng, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_ng_clean.rda") -> glowbe_ng_pos
+base::saveRDS(glowbe_ng_pos, file = here::here("data", "glowbe_ng_pos.rda"))
+rm(glowbe_ng_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+## New Zealand
+
+```{r vnz, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_nz_clean.rda") -> glowbe_nz_pos
+base::saveRDS(glowbe_nz_pos, file = here::here("data", "glowbe_nz_pos.rda"))
+rm(glowbe_nz_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Philippines
+
+```{r vph, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_ph_clean.rda") -> glowbe_ph_pos
+base::saveRDS(glowbe_ph_pos, file = here::here("data", "glowbe_ph_pos.rda"))
+rm(glowbe_ph_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Pakistan
+
+```{r vpk, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_pk_clean.rda") -> glowbe_pk_pos
+base::saveRDS(glowbe_pk_pos, file = here::here("data", "glowbe_pk_pos.rda"))
+rm(glowbe_pk_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Singapore
+
+```{r vsg, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_sg_clean.rda") -> glowbe_sg_pos
+base::saveRDS(glowbe_sg_pos, file = here::here("data", "glowbe_sg_pos.rda"))
+rm(glowbe_sg_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## South Africa
+
+```{r vza, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_za_clean.rda") -> glowbe_za_pos
+base::saveRDS(glowbe_za_pos, file = here::here("data", "glowbe_za_pos.rda"))
+rm(glowbe_za_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Sri Lanka
+
+```{r vlk, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_lk_clean.rda") -> glowbe_lk_pos
+base::saveRDS(glowbe_lk_pos, file = here::here("data", "glowbe_lk_pos.rda"))
+rm(glowbe_lk_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+## Tanzania
+
+```{r vtz, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+postxt("glowbe_tz_clean.rda") -> glowbe_tz_pos
+base::saveRDS(glowbe_tz_pos, file = here::here("data", "glowbe_tz_pos.rda"))
+rm(glowbe_tz_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+## USA
+
+```{r vus, message=FALSE, warning=FALSE}
+start_time <- Sys.time()
+# batch 1
+postxt("glowbe_us_clean1.rda") -> glowbe_us1_pos
+base::saveRDS(glowbe_us1_pos, file = here::here("data", "glowbe_us1_pos.rda"))
+rm(glowbe_us1_pos)
+# batch 2
+postxt("glowbe_us_clean2.rda") -> glowbe_us2_pos
+base::saveRDS(glowbe_us2_pos, file = here::here("data", "glowbe_us2_pos.rda"))
+rm(glowbe_us2_pos)
+# batch 3
+postxt("glowbe_us_clean3.rda") -> glowbe_us3_pos
+base::saveRDS(glowbe_us3_pos, file = here::here("data", "glowbe_us3_pos.rda"))
+rm(glowbe_us3_pos)
+# batch 4
+postxt("glowbe_us_clean4.rda") -> glowbe_us4_pos
+base::saveRDS(glowbe_us4_pos, file = here::here("data", "glowbe_us4_pos.rda"))
+rm(glowbe_us4_pos)
+# batch 5
+postxt("glowbe_us_clean5.rda") -> glowbe_us5_pos
+base::saveRDS(glowbe_us5_pos, file = here::here("data", "glowbe_us5_pos.rda"))
+rm(glowbe_us5_pos)
+# batch 6
+postxt("glowbe_us_clean6.rda") -> glowbe_us6_pos
+base::saveRDS(glowbe_us6_pos, file = here::here("data", "glowbe_us6_pos.rda"))
+rm(glowbe_us6_pos)
+end_time <- Sys.time()
+end_time - start_time
+```
+
+
+
+# Outro
+
+```{r}
+sessionInfo()
+```
+
+

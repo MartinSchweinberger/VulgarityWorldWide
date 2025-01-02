@@ -1,0 +1,821 @@
+---
+title: "Vulgar language on the web across World Englishes - Part 1: data preparation"
+author: "Anonymous"
+date: "`r format(Sys.time(), '%Y-%m-%d')`"
+output: word_document
+bibliography: bibliography.bib
+link-citations: yes
+---
+
+# Intro
+
+This document shows an analysis that was performed with the aim of finding differences in swearing across geographically distinct varieties of English around the world based on the GloWbe corpus. 
+
+install packages
+
+```{r install, eval = F, message=F, warning=F}
+# install packages
+install.packages("tidyverse")
+install.packages("quanteda")
+install.packages("here")
+install.packages("udpipe")
+install.packages("future")
+install.packages("furrr")
+install.packages("stringi")
+install.packages("parallel")
+install.packages("usethis")
+```
+
+load packages and set options
+
+```{r act, message=FALSE, warning=FALSE}
+# load packages
+library(data.table)
+library(tidyverse)
+library(quanteda)
+library(here)
+library(stringi)
+library(parallel)
+library(usethis)
+```
+
+# Load data
+
+define paths
+
+```{r eval = F}
+# list files
+fls <- list.files("C:/Users/marti/OneDrive/Dokumente/UQ/Corpora/GloWbE", 
+                  pattern = "txt", 
+                  full.names = T, 
+                  recursive = T, 
+                  include.dirs = T)
+# inspect
+head(fls)
+```
+
+function for preparing data
+
+```{r eval = F}
+preptxt <- function(fls, var) {
+  fln  <- fls[stringr::str_detect(fls, var)]
+  txt <- sapply(fln, function(x){
+    x <- scan(x, what = "char", quote = "", skipNul = T) %>%
+      paste0(collapse = " ")  %>%
+      stringr::str_replace_all("##", "~~~##") %>%
+      stringr::str_split("~~~") %>%
+      unlist() 
+    }) %>%
+    unlist()
+  crp  <- names(txt)  %>% stringr::str_remove_all(".*GloWbE/") %>% stringr::str_remove_all("/Texts.*")
+  sfl  <- names(txt)  %>% stringr::str_remove_all(".*/")
+  fl  <- txt  %>% stringr::str_remove_all(" .*") %>% stringr::str_remove_all(".txt.*")
+  df <- data.frame(crp, fl, sfl, txt)
+  base::saveRDS(df, file = here::here("data", paste0(var, "df.rda", collapse = "", sep = "")))
+}
+```
+
+
+```{r eval = F}
+fls   <- fls[1:5]
+```
+
+
+# Processing
+
+```{r eval = F}
+# processing
+preptxt(fls, var = "Australia") # Australia
+preptxt(fls, var = "Bangladesh") # Bangladesh
+preptxt(fls, var = "Canada") # Canada
+preptxt(fls, var = "GB-Blog") # GB-Blog
+preptxt(fls, var = "GB-General") # GB-General
+preptxt(fls, var = "Ghana") # Ghana
+preptxt(fls, var = "Hong Kong") # Hong Kong
+preptxt(fls, var = "India") # India
+preptxt(fls, var = "Ireland") # Ireland
+preptxt(fls, var = "Jamaica") # Jamaica
+preptxt(fls, var = "Kenya") # Kenya
+preptxt(fls, var = "Malaysia") # Malaysia
+preptxt(fls, var = "New Zealand") # New Zealand
+preptxt(fls, var = "Nigeria") # Nigeria
+preptxt(fls, var = "Pakistan") # Pakistan
+preptxt(fls, var = "Philippines") # Philippines
+preptxt(fls, var = "Singapore") # Singapore
+preptxt(fls, var = "South Africa") # South Africa
+preptxt(fls, var = "Sri Lanka") # Sri Lanka
+preptxt(fls, var = "Tanzania") # Tanzania
+preptxt(fls, var = "US-Blog") # US-Blog
+preptxt(fls, var = "US-General") # US-General
+```
+
+check
+
+```{r eval = F}
+audf  <- base::readRDS(file = here::here("data", "Australiadf.rda"))
+# inspect
+head(audf); nrow(audf)
+```
+
+Clean text
+
+write function to clean text
+
+```{r eval = F}
+cleantxt <- function(dfs){
+  sapply(dfs, function(x) {
+  nmfl <- stringr::str_remove_all(x, ".*/") %>% stringr::str_remove_all("df.rda")
+  base::readRDS(file = x)  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt))  %>%
+  base::saveRDS(df, file = here::here("data", paste0(nmfl, "dfc.rda", collapse = "", sep = "")))
+}) }
+```
+
+apply function
+
+```{r eval = F}
+dfs <- list.files(here::here("data"), 
+                  pattern = "df.rda", 
+                  full.names = T, 
+                  recursive = T, 
+                  include.dirs = T)
+# inspect
+head(dfs)
+```
+
+
+```{r eval = F}
+dfs <- dfs[1]
+cleantxt(dfs)
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Australiadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Australiadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Bangladeshdf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Bangladeshdfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Canadadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Canadadfc.rda"))
+```
+
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "GB-Blogdf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "GB-Blogdfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "GB-Generaldf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "GB-Generaldfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Ghanadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Ghanadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Hong Kongdf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Hong Kongdfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Indiadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Indiadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Irelanddf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Irelanddfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Jamaicadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Jamaicadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Kenyadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Kenyadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Malaysiadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Malaysiadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "New Zealanddf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "New Zealanddfc.rda"))
+```
+
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Nigeriadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Nigeriadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Pakistandf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Pakistandfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Philippinesdf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Philippinesdfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Singaporedf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Singaporedfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "South Africadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "South Africadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Sri Lankadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Sri Lankadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "Tanzaniadf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "Tanzaniadfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "US-Blogdf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "US-Blogdfc.rda"))
+```
+
+```{r eval = F}
+df <- base::readRDS(file = here::here("data", "US-Generaldf.rda"))  %>%
+  dplyr::mutate(ctxt = tolower(txt)) %>%
+  dplyr::mutate(ctxt = iconv(ctxt, to = "ASCII"),
+                ctxt = stringr::str_remove(ctxt, ".*? "),
+                ctxt = stringr::str_remove_all(ctxt, "<.*?>"),
+                ctxt = stringr::str_remove_all(ctxt, "[:punct:]"),
+                ctxt = stringr::str_squish(ctxt)) 
+# save
+base::saveRDS(df, file = here::here("data", "US-Generaldfc.rda"))
+```
+
+
+# Regex
+
+define regex lists
+
+LDNOOBW (List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words)
+See https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/blob/master/en
+
+```{r eval = F}
+vulgar <- c("2g1c", "2 girls 1 cup", "acrotomophilia", "alabama hot pocket", "alaskan pipeline", "anal", "anilingus", "anus", "apeshit", "arsehole", "ass", "asshole", "assmunch", "auto erotic", "autoerotic", "babeland", "baby batter", "baby juice", "ball gag", "ball gravy", "ball kicking", "ball licking", "ball sack", "ball sucking", "bangbros", "bangbus", "bareback", "barely legal", "barenaked", "bastard", "bastardo", "bastinado", "bbw", "bdsm", "beaner", "beaners", "beaver cleaver", "beaver lips", "beastiality", "bestiality", "big black", "big breasts", "big knockers", "big tits", "bimbos", "birdlock", "bitch", "bitches", "black cock", "blonde action", "blonde on blonde action", "blowjob", "blow job", "blow your load", "blue waffle", "blumpkin", "bollocks", "bondage", "boner", "boob", "boobs", "booty call", "brown showers", "brunette action", "bukkake", "bulldyke", "bullet vibe", "bullshit", "bung hole", "bunghole", "busty", "butt", "buttcheeks", "butthole", "camel toe", "camgirl", "camslut", "camwhore", "carpet muncher", "carpetmuncher", "chocolate rosebuds", "cialis", "circlejerk", "cleveland steamer", "clit", "clitoris", "clover clamps", "clusterfuck", "cock", "cocks", "coprolagnia", "coprophilia", "cornhole", "coon", "coons", "creampie", "cum", "cumming", "cumshot", "cumshots", "cunnilingus", "cunt", "darkie", "date rape", "daterape", "deep throat", "deepthroat", "dendrophilia", "dick", "dildo", "dingleberry", "dingleberries", "dirty pillows", "dirty sanchez", "doggie style", "doggiestyle", "doggy style", "doggystyle", "dog style", "dolcett", "domination", "dominatrix", "dommes", "donkey punch", "double dong", "double penetration", "dp action", "dry hump", "dvda", "eat my ass", "ecchi", "ejaculation", "erotic", "erotism", "escort", "eunuch", "fag", "faggot", "fecal", "felch", "fellatio", "feltch", "female squirting", "femdom", "figging", "fingerbang", "fingering", "fisting", "foot fetish", "footjob", "frotting", "fuck", "fuck buttons", "fuckin", "fucking", "fucktards", "fudge packer", "fudgepacker", "futanari", "gangbang", "gang bang", "gay sex", "genitals", "giant cock", "girl on", "girl on top", "girls gone wild", "goatcx", "goatse", "god damn", "gokkun", "golden shower", "goodpoop", "goo girl", "goregasm", "grope", "group sex", "g-spot", "guro", "hand job", "handjob", "hard core", "hardcore", "hentai", "homoerotic", "honkey", "hooker", "horny", "hot carl", "hot chick", "how to kill", "how to murder", "huge fat", "humping", "incest", "intercourse", "jack off", "jail bait", "jailbait", "jelly donut", "jerk off", "jigaboo", "jiggaboo", "jiggerboo", "jizz", "juggs", "kike", "kinbaku", "kinkster", "kinky", "knobbing", "leather restraint", "leather straight jacket", "lemon party", "livesex", "lolita", "lovemaking", "make me come", "male squirting", "masturbate", "masturbating", "masturbation", "menage a trois", "milf", "missionary position", "mong", "motherfucker", "mound of venus", "mr hands", "muff diver", "muffdiving", "nambla", "nawashi", "negro", "neonazi", "nigga", "nigger", "nig nog", "nimphomania", "nipple", "nipples", "nsfw", "nsfw images", "nude", "nudity", "nutten", "nympho", "nymphomania", "octopussy", "omorashi", "one cup two girls", "one guy one jar", "orgasm", 
+            "orgy", "paedophile", "paki", "panties", "panty", "pedobear", "pedophile", "pegging", "penis", "phone sex", "piece of shit", "pikey", "pissing", "piss pig", "pisspig", "playboy", "pleasure chest", "pole smoker", "ponyplay", "poof", "poon", "poontang", "punany", "poop chute", "poopchute", "porn", "porno", "pornography", "prince albert piercing", "pthc", "pubes", "pussy", "queaf", "queef", "quim", "raghead", "raging boner", "rape", "raping", "rapist", "rectum", "reverse cowgirl", "rimjob", "rimming", "rosy palm", "rosy palm and her 5 sisters", "rusty trombone", "sadism", "santorum", "scat", "schlong", "scissoring", "semen", "sex", "sexcam", "sexo", "sexy", "sexual", "sexually", "sexuality", "shaved beaver", "shaved pussy", "shemale", "shibari", "shit", "shitblimp", "shitty", "shota", "shrimping", "skeet", "slanteye", "slut", "s&m", "smut", "snatch", "snowballing", "sodomize", "sodomy", "spastic", "spic", "splooge", "splooge moose", "spooge", "spread legs", "spunk", "strap on", "strapon", "strappado", "strip club", "style doggy", "suck", "sucks", "suicide girls", "sultry women", "swastika", "swinger", "tainted love", "taste my", "tea bagging", "threesome", "throating", "thumbzilla", "tied up", "tight white", "tit", "tits", "titties", "titty", "tongue in a", "topless", "tosser", "towelhead", "tranny", "tribadism", "tub girl", "tubgirl", "tushy", "twat", "twink", "twinkie", "two girls one cup", "undressing", "upskirt", "urethra play", "urophilia", "vagina", "venus mound", "viagra", "vibrator", "violet wand", "vorarephilia", "voyeur", "voyeurweb", "voyuer", "vulva", "wank", "wetback", "wet dream", "white power", "whore", "worldsex", "wrapping men", "wrinkled starfish", "xx", "xxx", "yaoi", "yellow showers", "yiffy", "zoophilia")
+```
+
+manual list
+
+```{r eval = F}
+manuallist <- c("poofter", "lesbo", "fag", "fags", "faggot", "faggots", "fagend", "fage", "fagg", "fagot", "fagge", "fagots", "faget", "fagends", "faggs", "faghag", "dyke", "dike", "dykes", "dikes", "bugger",
+                "buggers", "buggered", "buggering", "buggerall", "boffing", "bellend", "nympho", "nonce", "wanker", "wankers", "wank", "wanking", "wanka", "wanks", "wankie", "wanke", "wankan", "slag", "slagheap", "skank", "skanks", "shag", "shagging", "shaggin", "shagpile", "masterbate", "jerk", "circlejerk", "jerkoff", "jerks", "jerkoffs", "fuck", "fucking", "fucked", "eff", "fuckin", "effing", "fucks", "fk", "fac", "effie", "motherfucker", "fcuk", "clusterfuck", "mofo", "fuk", "effin", "fck", "motherfuckers", "fuckedup", "fucken", "effed", "fuckup", "phuc", "effi", "fke", "fcking", "fkn", 
+                "fking", "fukien", "fks", "fak", "phukan", "fuckups", "fack", "phuck", "fukin", "fuckoff", "facc", "fuckyou", "effs", "fuckall", "fuking", "fka", "fukk", "fcks", "fkin", "f", "fucka", "mofos", "mindfuck", "fukang", "fuka", "fuckn", "fckn", "effies", "fuks", "fuke", "fki", "effyou", "effe", "phucking", "fukn", "fked", "fkd", "effedup", "headfuck", "fuked", "fuckton", "fucki", "fkz", "fckin", "fcked", "effen", "phucas", "muhfuck", "fuuuuuck", "fukkk", "fuki", "fuecks", "fuckiing", "effend", "friggin", "frigging", "friggen", "frigg", "friggs", "friggn", "feck", "fecking", "feckin", "fecked", "feek", "fecks", "fek", "bukkake", "bonk", "bonks", "bitch", "bitching", "bitches", "bitchin", "biatch", "bitchie", "bitchs", "bitchslap", "biatches", "btch", "bitchslapped", "bitchslapping", "bitchass", "shebitch", "richbitch", "bitchslaps", "bitchfights", "bitchfest", "whore", "whores", "hoa", "hoare", "hoar", "camwhore", "madonnawhore", "hoares", "ohora", "hoarfrost", "handhoe", "hoarelaval", "manwhore", "attentionwhore", "whoreism", 
+                "whoreish", "whorehouse", "virginwhore", "mediawhore", "hoae", "crackwhore", "camerawhore", "slut", "sluts", "slutshamed", "slutz", "slutltagt", "huss", "hooker", "hookers", "ho", "hoe", "hor", "hore", "hos", "hoor", "hoedown", "hores", "hoing", "hoes", "hoas", "dildo", "boner", "boners", "bollocks", "bollix", "bollock", "twat", "twats", "tit", "tits", "titi", "titties", "titsup", "titis", "tities", "tites", "pussy", "octopussy", "pussyfooting", "pussyfoot", "pussyfooted", "pussybow", "pussys", "pussywhipped", "prick", "pricks", "pinus", "pinas", "panas", "penas", "pianus", "penus", "pecker", "muff", "minger", "knob", "knobs", "knobhead", "knobbing", "knobbed", "knobtwiddling", "knobbilled", "hobknob", "gash", "fanny", "fannys", "dick", "dicks", "dix", "dickhead", "dickheads", "dicke", "dicked", "dixs", "dickswinging", "dickss", "dickish", "cunt", "cnt", "cunts", "kuntz", "kunt", "cnts", "cock", "cocks", "cockup", "cockups", "cok", "cockahoop", "cockfighting", "cockeyed", "cockandbull", "cockadoodledoo", "cockcrow", "cocksucker", "cck", "weathercock", "cockblock", 
+                "cockadoodledo", "cocksure", "cockfights", "cockadoodle", "cocksucking", "cocksuckers", "cockrock", "halfcock", "damn", "damned", "goddam", "goddamned", "goddamn", "damnd", "damnall", "dontgiveadamn", "paki", "pakis", "packie", "packy", "paky", "pakie", "nigger", "niggers", "nigga", "niggas", "niggaz", "nigge", "niggerlover", "japs", "jap", "darkie", "cracker", "coon", "coons", "chink", "chinks", "chinkchink", "libtards", "libtard", "tosser", "sissy", "sissys", "hag", "hags", "hagridden", "bint", "lmao", "lmfao", "lmfaos", "stuffedup", "spastic", "moron", "morons", "idiot", "idiots", "idiotproof", "idiotsavant", "idiotproofing", "git", "gits", "sonofabitch", "sonsofbitches", "bastard", "bastards", "basterds", "basterd", "bastardchild", "cornhole", "nutsack", "juggs", "butthole", "buttwipe", "bunghole", "boobs", "boob", "boobtube", "manboobs", "sideboob", "ballsack", "asshole", "assholes", "ahole", "aholes", "noasshole", "assholeish", "ass", "asses", "kickass", "badass", "smartass", "bigass", "asskicking", "asss", "halfass", "dumbass", "hardass", "asse", "crazyass", "painintheass", "assbackwards", "asskissing", "wiseass", "lameass", "asswipe", "fatass", "longass", "grownass", "assn", "whoopass", "asskicker", "weirdass", "wildass", "brokeass", "badasses", "smartasses", "jackass", "hugeass", "kissass", "cheapass", "asshat", "lazyass", "dumbasses", "punkass", 
+                "asswhooping", "asslicking", "asshats", "asscovering", "weakass", "stupidass", "baddestass", "sillyass", "giantass", "fakeass", "coolass", "backwardass", "assbackward", "tightass", "suckass", "sexyass", "asswhipping", "asslickers", "asskickin", "asskickers", "assclowns", "arse", "arses", "arsehole", "arseholes", "smartarse", "arseend", "kickarse", "arsecovering", "paininthearse", "arsekicking", "arselicking", "shortarse", "arsekissing", "lardarse", "arsebackwards", "arseaboutface", "tightarse", "halfarse", "badarse", "shit", "bullshit", "shits", "bullshitting", "batshit", "shitton", "shitstorm", "nobullshit", "bullshits", "shithole", "shiteating", "shitt", "bullshite", "shitfaced", "shittalking", "horseshit", "shitkicking", "apeshit", "shitload", "pieceofshit", "chickenshit", "bullshitted", "shittin", "shitstirring", "shitscared", "shitstirrer", "shiti", "bullshitfree", "shitshow", "dogshit", "bullshiting", "shitreplacement", "shiting", "shitforbrains", "shitcovered", "jackshit", "batshitcrazy", "shittt", "shittonne", "shitloads", "shitkickers", "shithouse", "shithot", "shithead", "shitgt", "shitcanned", "bullshitt", "bshit", "piss", "pisspoor", "pissup", "pisstake", 
+                "pisstaking", "pissant", "pissweak", "pissoff", "pisswarm", "pisstakes", "pissstained", "jism", "jiss", "cumming", "cummings", "crap", "craps", "crapper", "crapping", "crapped", "crappier", "crape", "crappie", "crapshoot", "crapness", "crappies", "crapp", "crapton", "crappers", "crapload", "crapi", "bullcrap", "crapps", "crapa", "bloody", "bloodyminded", "bloodymindedness", "bloodywell", "fanbloodytastic", "absobloodylutely", "pig", "pigs", "pigheaded", "pigtailed", "piglike", "pigignorant", "pigheadedness", "pigrearing", "pignosed", "pigignorance", "pigheadedly", "pigfaced", "pigugly", "pigsmashing", "pigshit", "pigfooted")
+```
+
+regex optimised
+
+```{r}
+regexlist <- c(# fuck
+  "\\bf[uoaeck\\W]+\\b",
+  "\\bf[uck\\W]+(er|ers|a|ing|er|a|az|erz|in)\\b",
+  "\\bf[ock\\W]+(er|ers|a|ing|er|a|az|erz|in)\\b",
+  "\\bf[eck\\W]+(er|ers|a|ing|er|a|az|erz|in)\\b",
+  "\\bf[ack\\W]+(er|ers|a|ing|er|a|az|erz|in)\\b",
+  "\\bf\\b",
+  # Xfucker
+  "\\b(mother|motha|cluster|head)f[auock\\W]+(er|ers|a|ing|er|a|az|erz|in)\\b",
+  "\\bmofo[sz]*\\b",
+  # phuk (phuc)
+  "\\bphu[ck]+\\w*\\b",
+  # eff
+  "\\bef[f][ingedyoup]*\\b",
+  # online
+  "\\bwtf\\b", "\\basf\\b", "\\baf\\b", "\\blmao\\b", "\\bgtfo\\b", "\\bstfu\\b", "\\bfml\\b", "\\blmfao\\b", "\\bsmh\\b", "\\bbfd\\b", "\\bbfu\\b", "\\broflmao\\b",
+  # arse
+  "\\b[smrtighthalfbdck]*arse[holesz]*\\b",
+  # ass
+  "\\ba[sz]{2,}[esz]{0,2}]*\\b",
+  # asshole
+  "\\ba[sz]{2,}[(hole)]*[sz]{0,1}\\b",
+  # bastard
+  "\\bbastard\\w*\\b",
+  # beaner 
+  "\\bbeaner[s]*\\b",
+  # bellend
+  "\\bbellend[s]*\\b",
+  # bloody
+  "\\bblood[iyed]+\\b",
+  # boobs
+  "\\bboob[ies]*\\b",
+  # butt
+  "\\bbutt[swhipe]*\\b",
+  # bitch
+  "\\bb[i]*[a]*tch\\w*\\b",
+  # bugger
+  "\\bbugg[eringsal]+\\b",
+  # cock
+  "\\bco[ckx][szheaducker]*\\b",
+  # chink
+  "\\bch[i]*nk[s]*\\b",
+  # coon
+  "\\bcoon[s]*\\b",
+  # crap
+  "\\b[bull]*crap\\w*\\b",
+  # cum
+  "\\bcum[ming]*\\b",
+  # cunt ("cunt", "cnt", "cunts", "kuntz", "kunt", "cnts")
+  "\\b[ck]+[u]*nt[sz]*\\b",
+  # damn
+  "\\b[god]*damn\\b",
+  # dick
+  "\\bdi[xck]+[szinghead]*\\b",
+  # dike
+  "\\b[bul]*d[iy]*ke[sz]*\\b",
+  # dildo
+  "dildo[s]*",
+  # boner
+  "\\bboner[s]*\\b", 
+  # bollocks
+  "\\bboll[io]+[xcks]+\\b", 
+  # darkie
+  "\\bdarki[es]*\\b",
+  # fag
+  "\\bfag\\w*\\b",
+  # feck
+  "\\bfe[ck]+[enigsd]*\\b",
+  # frig
+  "\\bfrig[gineds]*\\b",
+  # fanny
+  "\\bfann[iesy]+\\b",
+  # gash
+  "\\bgash\\b",
+  # gook
+  "\\bg[o]*ok[s]*\\b",
+  # idiot
+  "\\bidiot\\w*\\b",
+  # jackass
+  "\\bjackass\\b",
+  # jap 
+  "\\bjap[s]*\\b",
+  # jerk
+  "\\bjerk[szinged]*\\b",
+  # jiggerboo
+  "\\b[j]+[i]+[g]+[ergbo]\\b",
+  # jiss
+  "\\bji[sszz]+\\b",
+  # kike
+  "\\bk[i]*ke[s]*\\b",
+  # knob
+  "\\bknob\\w*\\b",
+  # lesbo"
+  "\\blesbo[sz]*\\b",
+  # minger  
+  "\\bming[aers]+\\b",
+  # moron
+  "\\bm[ou]ron\\w*\\b",
+  # muff
+  "\\bmuff\\b",
+  # nigger
+  "\\bnigg[era]+\\w*\\b",
+  # nonce
+  "\\bnonce\\b",
+  # nympho 
+  "\\bnympho\\w*\\b",
+  # paki
+  "\\bpa[ck]+[yi]+[es]\\b",
+  # pecker
+  "\\bpe[ck]+er[s]*\\b",
+  # pedo
+  "\\bpedo[s]*\\b",
+  # pikey
+  "\\bpik[isey]+\\b",
+  # pinus 
+  "\\bp[iae]+n[ua]+s\\b",
+  # piss
+  "\\bpiss\\w*\\b",
+  # pig
+  "\\bpig[sz]*\\b",
+  # poofter
+  "\\bpooft\\w+\\b",
+  # prick
+  "\\bprick[s]*\\b",
+  # pussy
+  "\\bpuss[yies]+\\b",
+  # poofter
+  "\\bpoofter[sz]*\\b",
+  # queef
+  "\\bqu[ea]+f[szing]*\\b",
+  # shag
+  "\\bshag\\w*\\b",
+  # shit
+  "\\b[bull]*[s]+[h]+[i]+[t]+\\w\\b",
+  # skank 
+  "\\bskank[sz]*\\b",
+  # slag 
+  "\\bslag\\w*\\b",
+  # slut
+  "\\bslut\\w*\\b",
+  # spastic
+  "\\bspast\\w*\\b",
+  # Xtard
+  "\\b\\wtard[s]*\\b",
+  # tits
+  "\\btit[ties]\\b",
+  # tranny
+  "\\btr[a]*nn[yies]*\\b",
+  # twat
+  "\\btwat[s]*\\b",
+  # wank
+  "\\bwank[erings]*\\b",
+  # whor[eish] 
+  "\\b[w]*h[o]+r[eishng]*\\b",
+  # whore 
+  "\\bho[iae]+[szing]*\\b",
+  # whore
+  "\\b[camn]*whor\\w*\\b",
+  # whore
+  "\\bwhor\\w*\\b"
+  )
+
+
+```
+
+
+```{r}
+
+```
+
+
+# Search
+
+```{r}
+# Australia
+df <- base::readRDS(file = here::here("data", "Australiadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Australiares.rda"))
+# inspect
+head(res, 1000); table(res$keyword); nrow(res)
+```
+
+```{r}
+# Bangladesh
+df <- base::readRDS(file = here::here("data", "Bangladeshdfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Bangladeshres.rda"))
+```
+
+```{r}
+# Canada
+df <- base::readRDS(file = here::here("data", "Canadadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Canadares.rda"))
+```
+
+```{r}
+# GB-Blog
+df <- base::readRDS(file = here::here("data", "GB-Blogdfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Gbblogres.rda"))
+```
+
+```{r}
+# GB-General
+df <- base::readRDS(file = here::here("data", "GB-Generaldfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Gbgeneralres.rda"))
+```
+
+```{r}
+# Ghana
+df <- base::readRDS(file = here::here("data", "Ghanadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Ghanares.rda"))
+
+# Hong Kong
+df <- base::readRDS(file = here::here("data", "Hong Kongdfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Hongkongres.rda"))
+
+# India
+df <- base::readRDS(file = here::here("data", "Indiadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Indiares.rda"))
+
+# Ireland
+df <- base::readRDS(file = here::here("data", "Irelanddfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Irelandres.rda"))
+
+# Jamaica
+df <- base::readRDS(file = here::here("data", "Jamaicadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Jamaicares.rda"))
+
+# Kenya
+df <- base::readRDS(file = here::here("data", "Kenyadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Kenyares.rda"))
+
+# Malaysia
+df <- base::readRDS(file = here::here("data", "Malaysiadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Malaysiares.rda"))
+
+# New Zealand
+df <- base::readRDS(file = here::here("data", "New Zealanddfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Newzealandres.rda"))
+
+# Nigeria
+df <- base::readRDS(file = here::here("data", "Nigeriadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Nigeriares.rda"))
+
+# Pakistan
+df <- base::readRDS(file = here::here("data", "Pakistandfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Pakistanres.rda"))
+
+# Philippines
+df <- base::readRDS(file = here::here("data", "Philippinesdfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Philippinesres.rda"))
+
+# Singapore
+df <- base::readRDS(file = here::here("data", "Singaporedfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Singaporeres.rda"))
+
+# South Africa
+df <- base::readRDS(file = here::here("data", "South Africadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Southafricares.rda"))
+
+# Sri Lanka
+df <- base::readRDS(file = here::here("data", "Sri Lankadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Srilankares.rda"))
+
+# Tanzania
+df <- base::readRDS(file = here::here("data", "Tanzaniadfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Tanzaniares.rda"))
+
+# US-Blog
+df <- base::readRDS(file = here::here("data", "US-Blogdfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Usblogres.rda"))
+
+# US-General
+df <- base::readRDS(file = here::here("data", "US-Generaldfc.rda")) 
+quanteda::kwic(quanteda::tokens(df$ctxt), regexlist, valuetype = "regex") %>%
+  as.data.frame() -> res
+# save
+base::saveRDS(res, file = here::here("tables", "Usgeneralres.rda"))
+```
+
+
+# Outro
+
+```{r}
+sessionInfo()
+```
+
+# Appendix
+
+testing
+
+```{r, eval = F}
+fln  <- fls[stringr::str_detect(fls, "Australia")]
+txt <- sapply(fln, function(x){
+    x <- scan(x, what = "char", quote = "", skipNul = T) %>%
+      paste0(collapse = " ")  %>%
+      stringr::str_replace_all("##", "~~~##") %>%
+      stringr::str_split("~~~") %>%
+      unlist()
+    }) %>%
+    unlist()
+crp  <- fln  %>% stringr::str_remove_all(".*GloWbE/") %>% stringr::str_remove_all("/Texts.*")
+sfl  <- fln  %>% stringr::str_remove_all(".*/")
+fl  <- txt  %>% stringr::str_remove_all(" .*") %>% stringr::str_remove_all(".txt.*")
+df <- data.frame(crp, fl, sfl, txt)
+# save
+base::saveRDS(df, file = here::here("data", paste0("Australia", "df.rda", collapse = "", sep = "")))
+# inspect
+str(df)
+```

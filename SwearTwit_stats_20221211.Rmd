@@ -1,0 +1,288 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+# set options
+options("scipen" = 100, "digits" = 12) # suppress math annotation
+# load packages
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(glmulti)
+library(lme4)
+library(rms)
+library(sjPlot)
+```
+
+
+```{r}
+early <- c("2006", "2007", "2008", "2009", "2010", "2011", "2012", "2013", "2014", "2015")
+mid <- c("2016", "2017", "2018", "2019", "2020")
+late <- c("2021", "2022")
+
+sdat  <- base::readRDS(file = here::here("data", "tws_bt.rda")) %>%
+  dplyr::mutate(logfollow = log(following),
+                logtweets = log(tweet_count),
+                logfollowers = log(followers),
+                vulgar = factor(vulgar)) %>%
+  dplyr::select(-retweet, -conversation_id, -followers, -following, -tweet_count,  -verified)%>%
+  dplyr::mutate(topic = dplyr::case_when(topic == "employment" ~ "employment",
+                                         topic == "crime" ~ "crime",
+                                         topic == "web" ~ "web",
+                                         topic == "other" ~ "web",
+                                         T ~ "other"),
+                user_created_at = dplyr::case_when(user_created_at %in% early ~ "a_early",
+                                                   user_created_at %in% mid ~ "b_mid",
+                                                   user_created_at %in% late ~ "c_late",
+                                                   T ~ "other"),
+                var = dplyr::case_when(var == "au" ~ "Australia",
+                                       var == "gb" ~ "GreatBritain",
+                                       var == "us" ~ "UnitedStates",
+                                       T ~ var),
+                reply = ifelse(reply == 1, "reply", "noreply"),
+                quote = ifelse(quote == 1, "quote", "noquote")) %>%
+  dplyr::filter(complete.cases(.)) %>%
+  dplyr::group_by(var) %>%
+  dplyr::sample_n(10000) %>%
+  dplyr::rename(Location = var,
+                 Topic = topic,
+                 Reply = reply,
+                 Quote = quote,
+                User = user,
+                Created = user_created_at,
+                Following = logfollow,
+                Followers = logfollowers,
+                Tweets = logtweets) %>%
+  dplyr::ungroup() %>%
+  dplyr::mutate_if(is.character, factor) 
+# inspect
+summary(sdat)
+```
+
+
+# Boruta
+
+```{r}
+library(Boruta)
+# set.seed 
+set.seed(20221210)
+# initial run
+boruta1 <- Boruta(vulgar~.,data=sdat)
+print(boruta1)
+```
+
+
+
+
+```{r}
+# extract decision
+getConfirmedFormula(boruta1)
+```
+
+```{r}
+boruta2 <-Boruta(getConfirmedFormula(boruta1), data = sdat)
+print(boruta2)
+```
+
+
+
+```{r}
+library(stringr)
+borutadf <- as.data.frame(boruta2$ImpHistory) %>%
+  tidyr::gather(Variable, Importance, Followers:shadowMin) %>%
+  dplyr::mutate(Type = ifelse(str_detect(Variable, "shadow"), "Control", "Predictor")) %>%
+  dplyr::mutate(Type = factor(Type),
+                Variable = factor(Variable))
+
+# inspect
+head(borutadf)
+```
+
+
+```{r}
+ggplot(borutadf, aes(x = reorder(Variable, Importance, mean), y = Importance, fill = Type)) + 
+  geom_boxplot() +
+  geom_vline(xintercept=3.5, linetype="dashed", color = "black") +
+  scale_fill_manual(values = c("gray80", "gray40")) +
+  theme_bw() + 
+  theme(legend.position = "top",
+        axis.text.x = element_text(angle=90)) +
+  labs(x = "Variable")
+# save
+ggsave(here::here("images", "boruta.png"))
+```
+
+```{r}
+sdat$prediction <-predict(boruta2, sdat)
+# inspect
+head(sdat)
+```
+
+
+# GLMM
+
+
+
+
+
+
+
+
+```{r}
+# set options
+options(contrasts  =c("contr.treatment", "contr.poly"))
+mblrdata.dist <- datadist(sdat)
+options(datadist = "mblrdata.dist")
+```
+
+
+```{r}
+# base-line mixed-model
+m0 = glmer(vulgar ~ (1|user), data = sdat, family = binomial) 
+sjPlot::tab_model(m0)
+```
+
+
+```{r eval = F}
+# base-line mixed-model
+m1 = glmer(vulgar ~ (1|user) + topic * var, data = sdat, family = binomial, optimizer="bobyqa", control=glmerControl(nAGQ0initStep=FALSE))
+sjPlot::tab_model(m0)
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+# wrapper function for linear mixed-models
+glmer.glmulti <- function(formula,data, random="",...){
+  glmer(paste(deparse(formula),random), family = binomial, data=data, ...)
+}
+# define formular
+form_glmulti = as.formula(paste("vulgar ~ topic + var +  logtweets + logfollowers"))
+#form_glmulti = as.formula(paste("vulgar ~ topic + var + user_created_at + reply + logtweets + logfollowers"))
+```
+
+
+
+
+```{r eval = F}
+# multi selection for glmer
+mfit <- glmulti(form_glmulti,random="+(1 | user)", 
+                data = sdat, method = "h", fitfunc = glmer.glmulti,
+                crit = "aic", intercept = TRUE, marginality = FALSE, level = 2)
+```
+
+
+```{r eval = F}
+# extract best models
+top <- weightable(mfit)
+top <- top[1:5,]
+# inspect top 5 models
+top
+```
+
+
+```{r eval = F}
+# base-line mixed-model
+m1 = glmer(vulgar ~ (1|user) + topic + var + user_created_at + reply + logfollow + logtweets + logfollowers + verified, data = sdat, family = binomial)
+sjPlot::tab_model(m1)
+```
+
+```{r}
+table(sdat$vulgar, sdat$var)
+m1 = glmer(vulgar ~ (1|user) + var, data = sdat, family = binomial)
+sjPlot::tab_model(m1)
+```
+
+
+```{r}
+table(sdat$vulgar, sdat$topic)
+m2  <- update(m1, .~.+ topic)
+car::vif(m2)
+sjPlot::tab_model(m2)
+```
+
+
+
+```{r}
+table(sdat$vulgar, sdat$user_created_at)
+m3  <- update(m2, .~.+ user_created_at)
+car::vif(m3)
+sjPlot::tab_model(m3)
+```
+
+
+```{r}
+table(sdat$vulgar, sdat$quote)
+m4 <- update(m3, .~.+ quote)
+car::vif(m4)
+sjPlot::tab_model(m4)
+```
+
+
+```{r}
+table(sdat$vulgar, sdat$reply)
+m5 = glmer(vulgar ~ (1|user) + var + topic + user_created_at + quote + reply, data = sdat, family = binomial)
+car::vif(m5)
+sjPlot::tab_model(m5)
+```
+
+
+```{r eval = F}
+m6 <- update(m5, .~.+ logtweets)
+car::vif(m6)
+sjPlot::tab_model(m6)
+```
+
+
+
+```{r eval = F}
+m7 <- update(m5, .~.+ logfollowers)
+car::vif(m7)
+sjPlot::tab_model(m7)
+```
+
+
+
+
+
+```{r}
+m5b <- update(m5, .~.- user_created_at)
+sjPlot::tab_model(m5b)
+```
+
+
+
+```{r}
+options("scipen" = 100, "digits" = 12) # suppress math annotation
+
+sjPlot::plot_model(m2, type = "pred", terms = c( "var", "topic")) +
+  theme_bw()
+```
+
+
+
+
+```{r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
